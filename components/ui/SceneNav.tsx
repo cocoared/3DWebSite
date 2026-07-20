@@ -8,24 +8,32 @@ interface SceneNavProps {
   onSelect: (tab: SceneTab) => void; // タブが押されたときに呼ぶ
 }
 
-// SceneNav: 画面上部のナビゲーション。左にブランド名、中央にシーン切り替えタブ。
+// SceneNav: 画面上部のナビゲーション。シーン切り替えタブを中央に配置する。
 export default function SceneNav({ active, onSelect }: SceneNavProps) {
   return (
-    // header: ナビ全体の横並びコンテナ。
-    <header className="nav">
-      {/* brand: 左端のブランドロゴ文字。 */}
-      <div className="brand">R·A</div>
-      {/* tabs: 中央のシーン切り替えボタン群。 */}
-      <nav className="tabs">
-        {TABS.map((tab) => (
-          // 各タブボタン。選択中なら on クラスで強調し、押すと onSelect を呼ぶ。
-          <button key={tab.id} className={`tabb ${active === tab.id ? "on" : ""}`} onClick={() => onSelect(tab.id)}>
-            {tab.label}
-          </button>
-        ))}
+    // header: ナビ全体のコンテナ。タブを中央寄せする。
+    <header className="flex items-center justify-center">
+      {/* tabs: 中央のシーン切り替えボタンを丸いガラス風バーにまとめる。 */}
+      <nav className="pointer-events-auto flex gap-[5px] rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] p-[5px] backdrop-blur-[14px]">
+        {TABS.map((tab) => {
+          // isActive: このタブが現在選択中か。
+          const isActive = active === tab.id;
+          return (
+            // 各タブボタン。選択中なら白背景で強調し、押すと onSelect を呼ぶ。
+            <button
+              key={tab.id}
+              onClick={() => onSelect(tab.id)}
+              className={`cursor-pointer rounded-full border-0 px-5 py-[9px] font-mono text-xs tracking-[0.14em] uppercase transition-colors ${
+                isActive
+                  ? "bg-paper font-bold text-[#0a0a12]"
+                  : "text-paper/60 bg-transparent hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </nav>
-      {/* navpad: 右側の余白。中央のタブを視覚的に中央寄せするためのダミー。 */}
-      <div className="navpad" />
     </header>
   );
 }

@@ -1,308 +1,41 @@
-/* リセット: 全要素の box-sizing を border-box に統一する。 */
-* {
-  box-sizing: border-box;
+@import "tailwindcss";
+
+/* =============================================================
+ * デザイントークン: 色とフォントを Tailwind のテーマに登録する。
+ * これにより bg-ink / text-paper / font-display などが使えるようになる。
+ * ============================================================= */
+@theme {
+  --color-ink: #04060b; /* アプリ全体の背景（キャンバスの下地） */
+  --color-paper: #f6f5f1; /* シーン上に載る near-white のテキスト */
+  --color-link: #66d9ff; /* リンクのシアン */
+
+  --font-display: "Space Grotesk", sans-serif; /* 大見出し */
+  --font-body: "Manrope", system-ui, sans-serif; /* 本文・UI */
+  --font-jp: "Zen Kaku Gothic New", sans-serif; /* 日本語本文 */
+  --font-mono: "Space Mono", monospace; /* ラベル・数値 */
 }
 
-/* body: 余白をなくし、暗い背景・本文フォント・アンチエイリアスを設定。3D の全画面表示なのでスクロールを禁止。 */
-body {
-  margin: 0;
-  background: #04060b;
-  font-family: "Manrope", system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-}
+/* =============================================================
+ * ここから下は Tailwind のユーティリティで表現しづらい部分だけを残す:
+ *   - <input type="range"> のトラックとつまみ（疑似要素が必要）
+ *   - パネル見出しの脈動アニメーション（@keyframes が必要）
+ * つまみ等の色はシーンごとに変わるため、CSS 変数 --accent を読む。
+ * （--accent は ControlPanel 側でシーン色を流し込む）
+ * ============================================================= */
 
-/* リンク: シアン色でアンダーラインなし。ホバーで少し薄くする。 */
-a {
-  color: #66d9ff;
-  text-decoration: none;
-}
-a:hover {
-  opacity: 0.75;
-}
-
-/* app: 全画面の背景コンテナ。3D キャンバスと UI を絶対配置で重ねる土台。 */
-.app {
-  position: relative;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-  background: #04060b;
-}
-
-/* lay: 各シーンのキャンバス層。既定は透明(opacity:0)で操作不可。フェードで切り替える。 */
-.lay {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  opacity: 0;
-  transition: opacity 0.7s ease;
-  pointer-events: none;
-  touch-action: none;
-  cursor: grab;
-}
-/* ドラッグ中はカーソルを掴む形にする。 */
-.lay:active {
-  cursor: grabbing;
-}
-/* on: 選択中のシーン層。不透明にして操作を受け付ける。 */
-.lay.on {
-  opacity: 1;
-  pointer-events: auto;
-}
-/* R3F が生成する内側の canvas を層いっぱいに広げ、タッチのスクロール干渉を防ぐ。 */
-.lay canvas {
-  display: block;
-  width: 100% !important;
-  height: 100% !important;
-  touch-action: none;
-}
-
-/* vignette: 画面周辺を暗く落とす装飾オーバーレイ。操作は透過させる。 */
-.vignette {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(125% 95% at 50% 42%, transparent 55%, rgba(0, 0, 0, 0.36) 100%);
-}
-
-/* ui: キャンバスの上に重なる操作 UI 全体。上下に要素を振り分ける縦フレックス。既定は操作透過。 */
-.ui {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 34px 44px;
-  color: #f6f5f1;
-  transition: opacity 0.5s ease;
-}
-/* hide: UI を隠すための任意クラス(透明化)。 */
-.ui.hide {
-  opacity: 0;
-}
-
-/* nav: 上部ナビの横並び。 */
-.nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-/* brand: 左端のブランド文字(等幅フォント)。 */
-.brand {
-  font-family: "Space Mono", monospace;
-  font-weight: 700;
-  font-size: 19px;
-  letter-spacing: 0.06em;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
-}
-
-/* tabs: シーン切り替えボタンを丸いガラス風バーにまとめる。 */
-.tabs {
-  display: flex;
-  gap: 5px;
-  pointer-events: auto;
-  background: rgba(10, 12, 20, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  padding: 5px;
-  backdrop-filter: blur(14px);
-}
-
-/* tabb: 個々のタブボタン。 */
-.tabb {
-  font-family: "Space Mono", monospace;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  padding: 9px 20px;
-  border-radius: 999px;
-  border: 0;
-  background: transparent;
-  color: rgba(246, 245, 241, 0.6);
-  cursor: pointer;
-  transition: color 0.2s;
-}
-.tabb:hover {
-  color: #fff;
-}
-/* on: 選択中のタブは白背景で強調。 */
-.tabb.on {
-  background: #f6f5f1;
-  color: #0a0a12;
-  font-weight: 700;
-}
-
-/* navpad: 右端の余白。中央のタブを中央寄せするダミー幅。 */
-.navpad {
-  width: 52px;
-}
-
-/* bottom: 画面下端。左に見出し、右にパネルを両端揃えで並べる。 */
-.bottom {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 40px;
-}
-
-/* hero: 左下の見出しブロック。 */
-.hero {
-  max-width: 600px;
-}
-
-/* eyebrow: タイトル上の小ラベル。 */
-.eyebrow {
-  font-family: "Space Mono", monospace;
-  font-size: 12px;
-  letter-spacing: 0.26em;
-  text-transform: uppercase;
-  margin-bottom: 16px;
-  opacity: 0.72;
-}
-
-/* title: 大きな英字タイトル。 */
-.title {
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 76px;
-  line-height: 0.9;
-  letter-spacing: -0.03em;
-  margin: 0;
-  text-shadow: 0 4px 40px rgba(0, 0, 0, 0.45);
-}
-
-/* tag: 日本語の説明文。 */
-.tag {
-  font-family: "Zen Kaku Gothic New", sans-serif;
-  font-size: 16px;
-  line-height: 1.7;
-  margin: 18px 0 0;
-  max-width: 440px;
-  font-weight: 500;
-  opacity: 0.88;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
-}
-
-/* hint: 操作ヒント。頭に短い横線を付ける。 */
-.hint {
-  font-family: "Space Mono", monospace;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  margin-top: 24px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  opacity: 0.65;
-}
-.hint::before {
-  content: "";
-  width: 28px;
-  height: 1px;
-  background: currentColor;
-}
-
-/* panel: 右下の操作パネル(ガラス風)。 */
-.panel {
-  pointer-events: auto;
-  width: 276px;
-  padding: 18px 20px 22px;
-  border-radius: 18px;
-  background: rgba(9, 10, 16, 0.6);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 26px 64px -26px rgba(0, 0, 0, 0.8);
-}
-
-/* p-head: パネル見出し行。 */
-.p-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: "Space Mono", monospace;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-  opacity: 0.85;
-}
-
-/* dot: 見出し右の脈動する点。 */
-.dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  animation: pdot 1.9s ease-in-out infinite;
-}
-@keyframes pdot {
-  0%,
-  100% {
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 0 7px rgba(255, 255, 255, 0);
-  }
-}
-
-/* ctl: スライダー1本のラベル+入力。 */
-.ctl {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 11px 0;
-}
-/* 2本目以降のスライダーには上に区切り線を引く。 */
-.ctl + .ctl {
-  border-top: 1px solid rgba(255, 255, 255, 0.11);
-}
-
-/* c-top: スライダー上段(名前と現在値)。 */
-.c-top {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-/* c-name: スライダーの日本語名。 */
-.c-name {
-  font-size: 13px;
-  font-weight: 700;
-}
-/* c-name の英語補足(小さく薄く)。 */
-.c-name em {
-  font-family: "Space Mono", monospace;
-  font-style: normal;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  opacity: 0.5;
-  margin-left: 7px;
-}
-
-/* c-val: 現在値の表示(等幅)。 */
-.c-val {
-  font-family: "Space Mono", monospace;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-/* rng: スライダー本体の見た目(トラック)を独自スタイルにする。 */
+/* rng: スライダー本体（トラック）。既定の見た目を消して独自トラックにする。 */
 .rng {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
-  border-radius: 99px;
   width: 100%;
+  border-radius: 99px;
   outline: none;
   cursor: pointer;
   background: rgba(255, 255, 255, 0.16);
   margin: 0;
 }
-/* スライダーのつまみ(WebKit)。 */
+/* スライダーのつまみ（WebKit）。色はシーンのアクセント色。 */
 .rng::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px;
@@ -311,9 +44,9 @@ a:hover {
   cursor: pointer;
   border: 2px solid #0a0a12;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  background: #fff;
+  background: var(--accent, #fff);
 }
-/* スライダーのつまみ(Firefox)。 */
+/* スライダーのつまみ（Firefox）。 */
 .rng::-moz-range-thumb {
   width: 15px;
   height: 15px;
@@ -321,47 +54,16 @@ a:hover {
   cursor: pointer;
   border: 2px solid #0a0a12;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
-  background: #fff;
+  background: var(--accent, #fff);
 }
 
-/* pSun: 太陽パネルのアクセント色(黄)。 */
-.pSun .c-val {
-  color: #ffc93c;
-}
-.pSun .dot {
-  background: #ffc93c;
-}
-.pSun .rng::-webkit-slider-thumb {
-  background: #ffc93c;
-}
-.pSun .rng::-moz-range-thumb {
-  background: #ffc93c;
-}
-
-/* pOce: 浜辺パネルのアクセント色(水色)。 */
-.pOce .c-val {
-  color: #66d9ff;
-}
-.pOce .dot {
-  background: #66d9ff;
-}
-.pOce .rng::-webkit-slider-thumb {
-  background: #66d9ff;
-}
-.pOce .rng::-moz-range-thumb {
-  background: #66d9ff;
-}
-
-/* pGem: 宝石パネルのアクセント色(藤色)。 */
-.pGem .c-val {
-  color: #e8b4ff;
-}
-.pGem .dot {
-  background: #e8b4ff;
-}
-.pGem .rng::-webkit-slider-thumb {
-  background: #e8b4ff;
-}
-.pGem .rng::-moz-range-thumb {
-  background: #e8b4ff;
+/* pdot: パネル見出し右の点が脈打つアニメーション。 */
+@keyframes pdot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(255, 255, 255, 0);
+  }
 }

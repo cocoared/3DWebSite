@@ -39,7 +39,7 @@ export const DEFAULT_PARAMS: SceneParams = {
 };
 
 // STORAGE_KEY: 最後に開いていたシーンを localStorage に保存するときのキー名。
-export const STORAGE_KEY = "ra-scene-tab";
+export const STORAGE_KEY = "scene-tab";
 
 // TABS: 画面上部のタブ切り替えボタンの定義(識別子と表示ラベル)。
 export const TABS: { id: SceneTab; label: string }[] = [
@@ -50,10 +50,14 @@ export const TABS: { id: SceneTab; label: string }[] = [
 
 // HeroContent: 各シーンの左下に出す見出しブロックの文言。
 export interface HeroContent {
-  eyebrow: string; // 小さな上付きラベル(例: Scene 01 — Solar)
-  title: string; // 大きな英字タイトル(例: THE SUN)
-  tag: string; // 日本語の説明文
-  hint: string; // 操作方法のヒント(例: Drag to orbit · Click to flare)
+  // 小さな上付きラベル(例: Scene 01 — Solar)
+  eyebrow: string;
+  // 大きな英字タイトル(例: THE SUN)
+  title: string;
+  // 日本語の説明文
+  tag: string;
+  // 操作方法のヒント(例: Drag to orbit · Click to flare)
+  hint: string;
 }
 
 // HERO: シーンごとの見出し文言をまとめたテーブル。
@@ -80,12 +84,18 @@ export const HERO: Record<SceneTab, HeroContent> = {
 
 // SliderDef: 操作パネル1本ぶんのスライダー設定。
 export interface SliderDef {
-  field: string; // 対応するパラメータのプロパティ名(例: 'amb')
-  name: string; // 日本語ラベル(例: 光量)
-  unit: string; // 英語の補足ラベル(例: brightness)
-  min: number; // スライダー最小値
-  max: number; // スライダー最大値
-  step: number; // スライダーの刻み幅
+  // 対応するパラメータのプロパティ名(例: 'amb')
+  field: string;
+  // 日本語ラベル(例: 光量)
+  name: string;
+  // 英語の補足ラベル(例: brightness)
+  unit: string;
+  // スライダー最小値
+  min: number;
+  // スライダー最大値
+  max: number;
+  // スライダーの刻み幅
+  step: number;
 }
 
 // SLIDERS: シーンごとの操作スライダー定義。UI はこの配列を回してパネルを描画する。
@@ -106,9 +116,13 @@ export const SLIDERS: Record<SceneTab, SliderDef[]> = {
   ],
 };
 
-// PANEL_ACCENT: シーンごとに操作パネルの装飾色を切り替えるための CSS クラス名。
+// PANEL_ACCENT: シーンごとの操作パネルの装飾色（スライダーのつまみ・数値・脈動点に使う）。
+// ControlPanel が CSS 変数 --accent へ流し込み、globals.css のつまみと数値表示がこれを読む。
 export const PANEL_ACCENT: Record<SceneTab, string> = {
-  sun: "pSun",
-  oce: "pOce",
-  gem: "pGem",
+  // 太陽: 黄
+  sun: "#ffc93c",
+  // 浜辺: 水色
+  oce: "#66d9ff",
+  // 宝石: 藤色
+  gem: "#e8b4ff",
 };
