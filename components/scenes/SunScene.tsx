@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
-import { useDragInteraction } from "@/lib/useDragInteraction";
-import { buildSun, createSunAnim, updateSun, disposeSun } from "@/lib/scenes/sun";
+import { useFrame } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import type { SunParams } from "@/lib/scene";
+import { buildSun, createSunAnim, disposeSun, updateSun } from "@/lib/scenes/sun";
+import { useDragInteraction } from "@/lib/useDragInteraction";
 
-// SunScene: 太陽シーンのレイアウト（配線）担当。
+// SunScene: 太陽シーンのレイアウト担当。
 // 構築・更新・破棄の実処理は lib/scenes/sun.ts にあり、ここは React のフックと JSX だけ。
 export default function SunScene({ params }: { params: SunParams }) {
   // paramsRef: 毎フレーム最新の params を読むための ref(再レンダーを介さずループから参照する)。

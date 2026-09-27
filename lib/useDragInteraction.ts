@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
 import { useThree } from "@react-three/fiber";
+import { useEffect, useRef } from "react";
 
 // DragState: 1シーンぶんのポインタ操作の生データを保持する入れ物。
 // アニメーションループ(useFrame)側が毎フレーム読み取り、mx/my/tap を消費(リセット)して使う。

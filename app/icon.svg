@@ -1,4 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 画像の名前。スクリーンリーダーが読み上げる代替テキストになる -->
+  <title>3D Portfolio</title>
   <defs>
     <!-- 太陽の芯: 中心の白熱から橙へ落ちる放射グラデーション -->
     <radialGradient id="core" cx="50%" cy="46%" r="55%">

@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { useDragInteraction } from "@/lib/useDragInteraction";
-import { buildGems, createGemsAnim, updateGems, disposeGems } from "@/lib/scenes/gems";
 import type { GemParams } from "@/lib/scene";
+import { buildGems, createGemsAnim, disposeGems, updateGems } from "@/lib/scenes/gems";
+import { useDragInteraction } from "@/lib/useDragInteraction";
 
-// GemsScene: 宝石シーンのレイアウト（配線）担当。
+// GemsScene: 宝石シーンのレイアウト担当。
 // 構築・更新・破棄の実処理は lib/scenes/gems.ts にあり、ここは React のフックと JSX だけ。
 export default function GemsScene({ params }: { params: GemParams }) {
   // paramsRef: 最新のスライダー値をループから読むための ref。

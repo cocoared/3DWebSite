@@ -6,10 +6,10 @@
 // React には依存しないので、単体でのテストや流用がしやすい。
 
 import * as THREE from "three";
+import type { SunParams } from "@/lib/scene";
 import { NOISE } from "@/lib/shaders";
 import { makeGlow, makeStar } from "@/lib/textures";
 import type { DragState } from "@/lib/useDragInteraction";
-import type { SunParams } from "@/lib/scene";
 
 // Vec3: 3成分の数値配列を表す型エイリアス(方向ベクトルや座標に使う)。
 type Vec3 = [number, number, number];
@@ -658,7 +658,7 @@ export function updateSun(
       // 進行度(0〜1)
       const u = k / (SEG - 1);
       // 高さの配分カーブ
-      const s1 = Math.pow(u, 0.85);
+      const s1 = u ** 0.85;
       // a→b を補間して基準方向を作り、正規化する。
       let mx = st.a[0] + (st.b[0] - st.a[0]) * u;
       let my = st.a[1] + (st.b[1] - st.a[1]) * u;
@@ -677,7 +677,7 @@ export function updateSun(
         // 縦の凹凸(こぶ)
         0.18 * Math.sin(u * st.lf * 2.3 + st.seed * 40.0 + time * 0.7);
       // 先端ほど大きくなる重み
-      const tipw = Math.pow(u, 1.5);
+      const tipw = u ** 1.5;
       const wob =
         (Math.sin(u * 6.0 + time * 2.2 * st.wig + st.seed * 30.0) * 0.07 +
           Math.sin(u * 13.0 - time * 1.5 * st.wig + st.seed * 11.0) * 0.04) *
@@ -717,7 +717,7 @@ export function updateSun(
       // 正規化 Z
       ddz /= dl;
       // 根本ほど高温(明るい)
-      const hot = 1.0 - 0.62 * Math.pow(u, 1.2);
+      const hot = 1.0 - 0.62 * u ** 1.2;
       // 緑成分(温度で変化)
       const cg = 0.13 + 0.48 * hot;
       // 青成分
@@ -796,11 +796,13 @@ export function disposeSun(b: SunBuilt): void {
     mesh.geometry?.dispose();
     // マテリアル(単体/配列)
     const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat))
-      // 配列なら全て解放
-      mat.forEach((m) => m.dispose());
-    // 単体なら解放
-    else mat?.dispose();
+    if (Array.isArray(mat)) {
+      // 配列なら全て解放(for...of にするのは、forEach のコールバックが戻り値を返す書き方を避けるため)
+      for (const m of mat) m.dispose();
+    } else {
+      // 単体なら解放
+      mat?.dispose();
+    }
   });
   // コロナ板のジオメトリを解放
   b.halo.geometry.dispose();

@@ -31,7 +31,7 @@ export interface SceneParams {
   gem: GemParams;
 }
 
-// DEFAULT_PARAMS: 初期表示時のパラメータ値(元HTMLの初期 state と同じ値)。
+// DEFAULT_PARAMS: 初期表示時のパラメータ値。
 export const DEFAULT_PARAMS: SceneParams = {
   sun: { amb: 1.5, rot: 0.5, mera: 0.55 },
   oce: { amb: 0.85, wave: 0.5, speed: 0.45 },
@@ -82,7 +82,8 @@ export const HERO: Record<SceneTab, HeroContent> = {
   },
 };
 
-// SliderDef: 操作パネル1本ぶんのスライダー設定。
+// SliderDef: 操作パネル1本ぶんのスライダー(つまみを左右にドラッグして数値を決める <input type="range">)の設定。
+// field の文字列がパラメータ名になるので、ここに1行足すだけで ControlPanel に新しいスライダーが増える。
 export interface SliderDef {
   // 対応するパラメータのプロパティ名(例: 'amb')
   field: string;

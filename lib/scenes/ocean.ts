@@ -2,9 +2,9 @@
 // 空ドーム・砂浜・寄せ返す波の3枚を、共有シェーダーで構築・更新する。
 
 import * as THREE from "three";
+import type { OceParams } from "@/lib/scene";
 import { NOISE, SANDH, SKYF } from "@/lib/shaders";
 import type { DragState } from "@/lib/useDragInteraction";
-import type { OceParams } from "@/lib/scene";
 
 // OceanBuilt: buildOcean() が返す、ループから更新する3つのマテリアルとグループ。
 export interface OceanBuilt {

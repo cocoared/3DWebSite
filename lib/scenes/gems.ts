@@ -2,9 +2,9 @@
 // 7つの宝石をベルベット床に並べ、環境反射ときらめきで見せる。
 
 import * as THREE from "three";
-import { makeStar, makeSoft } from "@/lib/textures";
-import type { DragState } from "@/lib/useDragInteraction";
 import type { GemParams } from "@/lib/scene";
+import { get2dContext, makeSoft, makeStar } from "@/lib/textures";
+import type { DragState } from "@/lib/useDragInteraction";
 
 // GemDef: 宝石1個の定義。切子(cut)またはsphere(球)のどちらかで形を決める。
 interface GemDef {
@@ -385,8 +385,8 @@ export function buildGems(gl: THREE.WebGLRenderer): GemsBuilt {
   const vc = document.createElement("canvas");
   // 512角
   vc.width = vc.height = 512;
-  // 2D コンテキスト
-  const vx = vc.getContext("2d")!;
+  // 2D コンテキスト(取得できなければ get2dContext がエラーにする)
+  const vx = get2dContext(vc);
   // 中央やや下から広がるグラデ
   const vg = vx.createRadialGradient(256, 300, 30, 256, 256, 300);
   // 中心は明るめの紫黒
@@ -746,7 +746,7 @@ export function updateGems(
       // 0以上のサイン波
       const w = Math.max(0, Math.sin(time * u.f + u.p));
       // 鋭い閃光にして明るさを掛ける
-      sp.material.opacity = Math.pow(w, 14) * (0.25 + p.spark * 0.75) * (0.5 + p.amb * 0.35);
+      sp.material.opacity = w ** 14 * (0.25 + p.spark * 0.75) * (0.5 + p.amb * 0.35);
     }
   }
 
@@ -771,11 +771,13 @@ export function disposeGems(b: GemsBuilt): void {
     mesh.geometry?.dispose();
     // マテリアル
     const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
-    if (Array.isArray(mat))
-      // 配列なら全解放
-      mat.forEach((m) => m.dispose());
-    // 単体なら解放
-    else mat?.dispose();
+    if (Array.isArray(mat)) {
+      // 配列なら全解放(for...of にするのは、forEach のコールバックが戻り値を返す書き方を避けるため)
+      for (const m of mat) m.dispose();
+    } else {
+      // 単体なら解放
+      mat?.dispose();
+    }
   });
   // 反射キューブ解放
   b.env.dispose();

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import { useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
-import { useDragInteraction } from "@/lib/useDragInteraction";
-import { buildOcean, createOceanAnim, updateOcean, disposeOcean } from "@/lib/scenes/ocean";
+import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect, useMemo, useRef } from "react";
 import type { OceParams } from "@/lib/scene";
+import { buildOcean, createOceanAnim, disposeOcean, updateOcean } from "@/lib/scenes/ocean";
+import { useDragInteraction } from "@/lib/useDragInteraction";
 
-// OceanScene: 浜辺シーンのレイアウト（配線）担当。
+// OceanScene: 浜辺シーンのレイアウト担当。
 // 構築・更新・破棄の実処理は lib/scenes/ocean.ts にあり、ここは React のフックと JSX だけ。
 export default function OceanScene({ params }: { params: OceParams }) {
   // paramsRef: 最新のスライダー値を再レンダーなしでループから読むための ref。

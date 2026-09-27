@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* docs/ は解説用のクラス名（修正前の例など）を大量に含むため、
+   Tailwind の自動スキャン対象から外す。含めると使われない CSS が本番バンドルに混ざる。 */
+@source not "../docs";
+
 /* =============================================================
  * デザイントークン: 色とフォントを Tailwind のテーマに登録する。
  * これにより bg-ink / text-paper / font-display などが使えるようになる。
@@ -9,10 +13,11 @@
   --color-paper: #f6f5f1; /* シーン上に載る near-white のテキスト */
   --color-link: #66d9ff; /* リンクのシアン */
 
-  --font-display: "Space Grotesk", sans-serif; /* 大見出し */
-  --font-body: "Manrope", system-ui, sans-serif; /* 本文・UI */
-  --font-jp: "Zen Kaku Gothic New", sans-serif; /* 日本語本文 */
-  --font-mono: "Space Mono", monospace; /* ラベル・数値 */
+  /* 実体は layout.tsx の next/font が生成する変数。フォールバックも並べておく。 */
+  --font-display: var(--font-space-grotesk), sans-serif; /* 大見出し */
+  --font-body: var(--font-manrope), system-ui, sans-serif; /* 本文・UI */
+  --font-jp: var(--font-zen-kaku), sans-serif; /* 日本語本文 */
+  --font-mono: var(--font-space-mono), monospace; /* ラベル・数値 */
 }
 
 /* =============================================================
