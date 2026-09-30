@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- 画像の名前。スクリーンリーダーが読み上げる代替テキストになる -->
+  <title>3D Portfolio</title>
+  <defs>
+    <!-- 太陽の芯: 中心の白熱から橙へ落ちる放射グラデーション -->
+    <radialGradient id="core" cx="50%" cy="46%" r="55%">
+      <stop offset="0%" stop-color="#fff4d2" />
+      <stop offset="45%" stop-color="#ffc03c" />
+      <stop offset="80%" stop-color="#ed6a12" />
+      <stop offset="100%" stop-color="#a72d05" />
+    </radialGradient>
+    <!-- コロナ: 外周のにじみ -->
+    <radialGradient id="corona" cx="50%" cy="50%" r="50%">
+      <stop offset="55%" stop-color="#ff8a1e" stop-opacity="0" />
+      <stop offset="80%" stop-color="#ff7a1e" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#ff5a14" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <!-- 下地: サイトの背景色 #04060B の角丸 -->
+  <rect width="64" height="64" rx="14" fill="#04060b" />
+  <!-- コロナのにじみ -->
+  <circle cx="32" cy="32" r="26" fill="url(#corona)" />
+  <!-- 太陽本体 -->
+  <circle cx="32" cy="32" r="16" fill="url(#core)" />
+</svg>

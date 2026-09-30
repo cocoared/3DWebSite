@@ -1,0 +1,16 @@
+{
+  // このプロジェクトを開いたとき、VSCode が「入れておくとよい拡張機能」として案内するもの
+  "recommendations": [
+    // Biome: 保存時の整形と lint の表示に使う（.vscode/settings.json で既定の整形ツールにしている）
+    "biomejs.biome",
+    // Vitest: エディタ上でテストを実行・デバッグできる
+    "vitest.explorer"
+  ],
+  // このプロジェクトでは使わないので、入っていても案内しない（無効化を勧める）拡張機能
+  "unwantedRecommendations": [
+    // Prettier（Biome に置き換え済み）
+    "esbenp.prettier-vscode",
+    // ESLint（Biome に置き換え済み）
+    "dbaeumer.vscode-eslint"
+  ]
+}

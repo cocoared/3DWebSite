@@ -1,0 +1,41 @@
+{
+  // このプロジェクトでは整形と lint を Biome に一本化している。
+  // ユーザー設定（全プロジェクト共通）で Prettier が既定の整形ツールになっているので、ここで Biome に上書きする。
+  // 前提: VSCode 拡張機能「Biome」（biomejs.biome）が入っていること（.vscode/extensions.json で推奨済み）
+
+  // 保存したときに自動で整形する
+  "editor.formatOnSave": true,
+  // 整形に使うツールを Biome にする（ユーザー設定の Prettier を上書きする）
+  "editor.defaultFormatter": "biomejs.biome",
+  // 保存したときに追加で実行する処理
+  "editor.codeActionsOnSave": {
+    // Biome で自動修正できる lint の指摘を直す（explicit = 手動保存のときだけ。自動保存では動かさない）
+    "source.fixAll.biome": "explicit",
+    // import 文を並べ替える
+    "source.organizeImports.biome": "explicit"
+  },
+
+  // 言語ごとの整形ツール。ユーザー設定に言語別の指定が足されても、このプロジェクトでは Biome が使われるように明示する
+  // TypeScript
+  "[typescript]": { "editor.defaultFormatter": "biomejs.biome" },
+  // TypeScript + JSX（React コンポーネント）
+  "[typescriptreact]": { "editor.defaultFormatter": "biomejs.biome" },
+  // JavaScript
+  "[javascript]": { "editor.defaultFormatter": "biomejs.biome" },
+  // JSON
+  "[json]": { "editor.defaultFormatter": "biomejs.biome" },
+  // コメント付き JSON（biome.jsonc やこのファイル）
+  "[jsonc]": { "editor.defaultFormatter": "biomejs.biome" },
+  // CSS
+  "[css]": { "editor.defaultFormatter": "biomejs.biome" },
+
+  // Prettier 拡張機能をこのプロジェクトでは動かさない（設定ファイルが無いので、入っていると独自の既定値で整形してしまう）
+  "prettier.enable": false,
+  // ESLint 拡張機能をこのプロジェクトでは動かさない（ESLint は削除済み）
+  "eslint.enable": false,
+
+  // Tailwind CSS v4 の @theme / @import "tailwindcss" は標準 CSS に無い構文のため、
+  // VSCode 内蔵の CSS チェッカーが "Unknown at rule" と警告を出す。
+  // 実際のビルド(PostCSS + @tailwindcss/postcss)は正しく解釈できるので、この検査だけ無効化する。
+  "css.lint.unknownAtRules": "ignore"
+}

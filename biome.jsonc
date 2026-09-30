@@ -1,0 +1,112 @@
+{
+  // エディタで設定項目の補完・検証を効かせるためのスキーマ。インストールした Biome と同じバージョンにそろえる
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  // Git との連携設定
+  "vcs": {
+    // Git 連携を有効にする
+    "enabled": true,
+    // 使っているバージョン管理システムの種類
+    "clientKind": "git",
+    // .gitignore に書いたファイル（node_modules や .next など）を検査対象から外す
+    "useIgnoreFile": true
+  },
+  // 検査対象のファイルの設定
+  "files": {
+    // Biome が扱えない拡張子のファイルを渡されてもエラーにしない（コミット時に画像などが混ざっても止まらないように）
+    "ignoreUnknown": true,
+    // 検査対象。先頭が ! のものは除外。.gitignore に載っていないが検査したくないものをここで外す
+    "includes": [
+      // すべてのファイルを対象にする
+      "**",
+      // Next.js が自動生成する型定義。手で直さないので検査しない
+      "!next-env.d.ts",
+      // デザイン参照（プロトタイプ HTML など）。移植元の資料で、このプロジェクトのコードではない
+      "!.claude"
+    ]
+  },
+  // フォーマッター（整形）の共通設定。旧 .prettierrc.json と同じ見た目になるようにそろえている
+  "formatter": {
+    // 整形を有効にする
+    "enabled": true,
+    // インデントはタブではなくスペース（Biome の既定はタブなので明示する）
+    "indentStyle": "space",
+    // インデント幅は 2 スペース
+    "indentWidth": 2,
+    // 1 行の最大文字数。これを超えると折り返す
+    "lineWidth": 100,
+    // 改行コードは LF（Windows と WSL を行き来しても差分が出ないように）
+    "lineEnding": "lf"
+  },
+  // JavaScript / TypeScript の設定
+  "javascript": {
+    // JS / TS の整形設定
+    "formatter": {
+      // 文字列はダブルクォート
+      "quoteStyle": "double",
+      // JSX の属性もダブルクォート
+      "jsxQuoteStyle": "double",
+      // 文の末尾にセミコロンを付ける
+      "semicolons": "always",
+      // 複数行の配列・引数・オブジェクトの最後の要素にもカンマを付ける（行を足したときの差分が 1 行で済む）
+      "trailingCommas": "all",
+      // アロー関数の引数が 1 つでも括弧で囲む
+      "arrowParentheses": "always",
+      // { a } のように波括弧の内側にスペースを入れる
+      "bracketSpacing": true
+    }
+  },
+  // CSS の設定
+  "css": {
+    // CSS の構文解析の設定
+    "parser": {
+      // Tailwind CSS v4 の @theme / @source / @apply などを構文エラーにせず解釈する
+      "tailwindDirectives": true
+    }
+  },
+  // リンター（コードの問題検出）の設定
+  "linter": {
+    // リンターを有効にする
+    "enabled": true,
+    // ルールの設定
+    "rules": {
+      // Biome 推奨のルールをまとめて有効にする（旧来の "recommended": true は非推奨になったため preset で指定する）
+      "preset": "recommended",
+      // まだ試験段階（nursery）のルール
+      "nursery": {
+        // Tailwind のクラス名を公式の順番に並べる。旧 prettier-plugin-tailwindcss の代わり
+        // （試験段階のルールなので、誤検知があれば off にする）
+        "useSortedClasses": {
+          // 違反を警告として出し、--write で自動修正する
+          "level": "warn",
+          // ルールの細かい設定
+          "options": {
+            // className 以外にクラス名を書く関数（今は使っていないが、clsx などを入れたときのため）
+            "functions": ["clsx", "cn"]
+          }
+        }
+      }
+    },
+    // フレームワーク別のルール群
+    "domains": {
+      // React のフックの使い方などのルール（旧 eslint-plugin-react-hooks 相当）
+      "react": "recommended",
+      // Next.js 固有のルール（旧 eslint-config-next 相当。<img> ではなく next/image を使う、など）
+      "next": "recommended",
+      // Vitest / テストファイル向けのルール（focus したままのテストの検出など）
+      "test": "recommended"
+    }
+  },
+  // 補助機能（コードアクション）の設定
+  "assist": {
+    // 補助機能を有効にする
+    "enabled": true,
+    // 実行するアクション
+    "actions": {
+      // ソースコード全体に効くアクション
+      "source": {
+        // import 文を自動で並べ替える
+        "organizeImports": "on"
+      }
+    }
+  }
+}

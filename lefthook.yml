@@ -1,0 +1,38 @@
+# lefthook: Git のフック（コミットなどの直前に自動で動くスクリプト）を管理するツールの設定。
+# pnpm install のときに .git/hooks へフックが自動で登録される（package.json の lefthook と pnpm-workspace.yaml の allowBuilds）。
+# 緊急時に一度だけ飛ばしたいときは `LEFTHOOK=0 git commit ...`（常用しない）。
+# 詳しい書き方: https://lefthook.dev/configuration/
+
+# git commit の直前に動くフック。どれか 1 つでも失敗するとコミットは中止される
+pre-commit:
+  # 3 つのジョブはどれもファイルを書き換えない検査なので、並列に動かして待ち時間を減らす
+  parallel: true
+  # 実行するジョブの一覧
+  jobs:
+    # ジョブ 1: コミットするファイルだけを Biome で整形・lint の観点から検査する（書き換えはしない）
+    # 自動修正（--write + stage_fixed）にしない理由: 一部だけステージしたファイルがあると、
+    # lefthook が未ステージの変更を一時退避 → Biome が書き換え → 退避を戻すときに衝突し、作業中の変更が作業ツリーから消えることがある（実際に起きた）。
+    # 指摘されたら `pnpm lint:fix` で直して git add し直す。保存時の自動整形（.vscode/settings.json）があれば通常は指摘されない
+    - name: biome
+      # 対象にする拡張子（Biome が扱えるもの）。これ以外のファイルだけのコミットでは実行しない
+      glob: "*.{js,jsx,ts,tsx,mjs,mts,cjs,json,jsonc,css}"
+      # {staged_files}: コミット予定のファイル一覧に置き換わる
+      # --no-errors-on-unmatched: 対象が Biome の検査対象外（biome.jsonc で除外）だけでもエラーにしない
+      run: pnpm exec biome check --no-errors-on-unmatched {staged_files}
+
+    # ジョブ 2: プロジェクト全体の型チェック。1 ファイルの変更が別のファイルの型を壊すことがあるので、全体を見る
+    - name: typecheck
+      # TypeScript か JSON のファイルがコミットに含まれるときだけ実行する
+      # （JSON を import する lib/birthstones.ts のように、JSON の中身が型に影響することがあるため）
+      glob: "*.{ts,tsx,mts,json}"
+      # 型エラーがあれば失敗する（ファイルは出力しない）
+      run: pnpm typecheck
+
+    # ジョブ 3: テストを 1 回だけ実行する（監視モードにしない）
+    - name: test
+      # TypeScript か JSON のファイルがコミットに含まれるときだけ実行する。
+      # lib/birthstones.json だけを直したコミットでも、その中身を確かめるテスト（lib/birthstones.test.ts）を走らせる。
+      # 走らせないと、壊れたデータがページを開いたときに初めて見つかり、ページ全体が表示できなくなる
+      glob: "*.{ts,tsx,mts,json}"
+      # 1 件でも失敗すればコミットを止める
+      run: pnpm test

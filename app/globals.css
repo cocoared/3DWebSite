@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/* docs/ は解説用のクラス名（修正前の例など）を大量に含むため、
+   Tailwind の自動スキャン対象から外す。含めると使われない CSS が本番バンドルに混ざる。 */
+@source not "../docs";
+
+/* =============================================================
+ * デザイントークン: 色とフォントを Tailwind のテーマに登録する。
+ * これにより bg-ink / text-paper / font-display などが使えるようになる。
+ * ============================================================= */
+@theme {
+  --color-ink: #04060b; /* アプリ全体の背景（キャンバスの下地） */
+  --color-paper: #f6f5f1; /* シーン上に載る near-white のテキスト */
+  --color-link: #66d9ff; /* リンクのシアン */
+
+  /* 実体は layout.tsx の next/font が生成する変数。フォールバックも並べておく。 */
+  --font-display: var(--font-space-grotesk), sans-serif; /* 大見出し */
+  --font-body: var(--font-manrope), system-ui, sans-serif; /* 本文・UI */
+  --font-jp: var(--font-zen-kaku), sans-serif; /* 日本語本文 */
+  --font-mono: var(--font-space-mono), monospace; /* ラベル・数値 */
+}
+
+/* =============================================================
+ * ここから下は Tailwind のユーティリティで表現しづらい部分だけを残す:
+ *   - <input type="range"> のトラックとつまみ（疑似要素が必要）
+ *   - パネル見出しの脈動アニメーション（@keyframes が必要）
+ * つまみ等の色はシーンごとに変わるため、CSS 変数 --accent を読む。
+ * （--accent は ControlPanel 側でシーン色を流し込む）
+ * ============================================================= */
+
+/* rng: スライダー本体（トラック）。既定の見た目を消して独自トラックにする。 */
+.rng {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  width: 100%;
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.16);
+  margin: 0;
+}
+/* キーボードで選んだときだけ、スライダーの周りに枠を出す（上の outline: none で消えた枠の代わり。WCAG 2.4.7）。
+   :focus-visible なので、マウスで触ったときは出ない。色はシーンのアクセント色。4px 離して、細いトラックやつまみに重ならないようにする。 */
+.rng:focus-visible {
+  outline: 2px solid var(--accent, #fff);
+  outline-offset: 4px;
+}
+/* スライダーのつまみ（WebKit）。色はシーンのアクセント色。 */
+.rng::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #0a0a12;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  background: var(--accent, #fff);
+}
+/* スライダーのつまみ（Firefox）。 */
+.rng::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #0a0a12;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  background: var(--accent, #fff);
+}
+
+/* pdot: パネル見出し右の点が脈打つアニメーション。 */
+@keyframes pdot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(255, 255, 255, 0);
+  }
+}
