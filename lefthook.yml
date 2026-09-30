@@ -22,14 +22,17 @@ pre-commit:
 
     # ジョブ 2: プロジェクト全体の型チェック。1 ファイルの変更が別のファイルの型を壊すことがあるので、全体を見る
     - name: typecheck
-      # TypeScript のファイルがコミットに含まれるときだけ実行する
-      glob: "*.{ts,tsx,mts}"
+      # TypeScript か JSON のファイルがコミットに含まれるときだけ実行する
+      # （JSON を import する lib/birthstones.ts のように、JSON の中身が型に影響することがあるため）
+      glob: "*.{ts,tsx,mts,json}"
       # 型エラーがあれば失敗する（ファイルは出力しない）
       run: pnpm typecheck
 
     # ジョブ 3: テストを 1 回だけ実行する（監視モードにしない）
     - name: test
-      # TypeScript のファイルがコミットに含まれるときだけ実行する
-      glob: "*.{ts,tsx,mts}"
+      # TypeScript か JSON のファイルがコミットに含まれるときだけ実行する。
+      # lib/birthstones.json だけを直したコミットでも、その中身を確かめるテスト（lib/birthstones.test.ts）を走らせる。
+      # 走らせないと、壊れたデータがページを開いたときに初めて見つかり、ページ全体が表示できなくなる
+      glob: "*.{ts,tsx,mts,json}"
       # 1 件でも失敗すればコミットを止める
       run: pnpm test

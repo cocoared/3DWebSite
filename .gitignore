@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# blender（blender/build_jewels.py で作り直せる中間ファイル。Blender の自動バックアップ .blend1 も含む）
+/blender/*.blend
+/blender/*.blend1
+/blender/__pycache__/
+
+# デザインの参照画像（外部の画像を含むため、公開リポジトリには入れず手元だけに置く）
+/.claude/references/
