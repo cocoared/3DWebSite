@@ -22,7 +22,7 @@ Next.js 16（App Router）+ React 19 + React Three Fiber（`@react-three/fiber` 
 | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | [.claude/README.md](.claude/README.md)                             | 3 シーンの仕様書。色・スライダーの範囲と初期値・文言・シェーダーの層構成・操作方法              | シーンの見た目や操作を変えるとき、「本来どう見えるべきか」を確認するとき |
 | [.claude/Portfolio Site.dc.html](<.claude/Portfolio Site.dc.html>) | 動くプロトタイプ（Three.js r128 + 生の GLSL）。**シェーダーの数式・色のランプ・波の関数の正解** | シェーダーを移植・修正するとき                                           |
-| [.claude/references/birthstone-chart.jpg](.claude/references/birthstone-chart.jpg) | THE JEWELS の参照画像。12 か月の誕生石の色・カット（形）・英語の石言葉 | 誕生石の形・色・文言を決めるとき |
+| [.claude/references/birthstone-chart.jpg](.claude/references/birthstone-chart.jpg) | THE JEWELS の参照画像。12 か月の誕生石の色・カット（形）・英語の石言葉。**外部の画像なので Git には入れず手元だけに置く**（無いときは `lib/birthstones.json` が正） | 誕生石の形・色・文言を決めるとき |
 | [docs/用語集.md](docs/用語集.md)                                   | このプロジェクトに出てくる専門用語の辞書                                                        | 知らない言葉が出てきたとき、新しい用語を導入したとき                     |
 | [docs/警告とTODOの解説.md](docs/警告とTODOの解説.md)               | 過去に出た警告の原因と対処、TODO コメントへの回答                                               | 同じ警告が出たとき、似た疑問が出たとき                                   |
 

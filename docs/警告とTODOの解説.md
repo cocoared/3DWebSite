@@ -12,6 +12,7 @@
 - [第1部：警告の話](#第1部警告の話)
   - [1-1. globals.css の警告（`@theme` が Unknown at rule）](#1-1-globalscss-の警告theme-が-unknown-at-rule)
   - [1-2. layout.tsx の警告（`no-page-custom-font`）](#1-2-layouttsx-の警告no-page-custom-font)
+  - [1-3. JewelsScene.tsx の警告（Biome の `noStaticElementInteractions`）](#1-3-jewelsscenetsx-の警告biome-の-nostaticelementinteractions)
 - [第2部：TODO の答え](#第2部todo-の答え)
   - [2-1. layout.tsx「ここの link たちいる？」](#2-1-layouttsxここの-link-たちいる)
   - [2-2. page.tsx「なぜブラウザ API をサーバーで実行させないのか？」](#2-2-pagetsxなぜブラウザ-api-をサーバーで実行させないのか)
@@ -337,6 +338,39 @@ $ find .next -name "*.woff2" | wc -l
 }
 <link href="https://fonts.googleapis.com/css2?family=..." rel="stylesheet" />;
 ```
+
+---
+
+## 1-3. JewelsScene.tsx の警告（Biome の `noStaticElementInteractions`）
+
+### 出ている警告
+
+`pnpm lint` で、誕生石シーンの `<mesh>` にエラーが出ました（2026-09-27）。
+
+```text
+components/scenes/JewelsScene.tsx lint/a11y/noStaticElementInteractions
+  × Unexpected event handler on static element.
+```
+
+### なぜ出るのか
+
+Biome は、小文字で始まる JSX の要素（`<div>` や `<span>`）を **HTML の要素** とみなします。
+「役割（role）を持たない静的な要素にクリックなどのイベントを付けると、キーボードやスクリーンリーダーで操作できない」というアクセシビリティのルールです。
+
+ところが `<mesh>` は HTML ではなく、React Three Fiber が three.js の `THREE.Mesh` に変換する **3D のオブジェクト** です。
+DOM の要素ではないので、`role` を付けても意味がなく、このルールは当てはまりません（Biome が R3F の要素を知らないための誤検知）。
+
+### 対処
+
+その要素の直前に、理由を書いた抑止のコメントを置きました。
+
+```tsx
+// biome-ignore lint/a11y/noStaticElementInteractions: <mesh> は DOM の要素ではなく three.js のオブジェクト（R3F の要素）なので当てはまらない。キーボードでは画面の月のボタンから同じ操作ができる
+<mesh onClick={onClick} ...>
+```
+
+ルールの本来の目的（キーボードでも操作できること）は、**画面の月のボタン（`MonthPicker`）で同じ操作ができる** ことで満たしています。
+3D の石をクリックするのはマウス・タッチ向けの近道で、キーボードの人は月のボタンを Tab で選んで Enter を押せば、同じ石へカメラが寄ります。
 
 ---
 

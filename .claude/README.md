@@ -1,5 +1,5 @@
 
-# Handoff: 3D Portfolio Site (Sun / Beach / Gems)
+# Handoff: 3D Portfolio Site (Sun / Beach / Jewels)
 
 ## ⚠️ How to use this (avoids the "prompt too long" error)
 Do **not** paste the contents of `Portfolio Site.dc.html` into Claude Code — that file is ~640 lines of inline GLSL and is what blows past the prompt limit. Instead:
@@ -8,7 +8,7 @@ Do **not** paste the contents of `Portfolio Site.dc.html` into Claude Code — t
 3. If you must work in a chat box without file access, paste **this README only** (it is self-contained — the scene specs, colors, shader-layer descriptions, controls, and tokens below are enough to rebuild each scene without the raw shader source), and copy in a single scene's shader method only when Claude Code asks for that specific one.
 
 ## Overview
-A single-page 3D portfolio with three full-screen WebGL scenes switched by a tab bar: **THE SUN** (a stylized star with surface turbulence, corona, and prominences), **THE SHORE** (a beach with animated waves, sky/clouds, and a day→night environment-light slider that reveals a starfield), and **THE GEMS** (seven colored gemstones with faceted, refractive materials). Each scene has a floating "Environment" control panel (sliders) in the bottom-right.
+A single-page 3D portfolio with three full-screen WebGL scenes switched by a tab bar: **THE SUN** (a stylized star with surface turbulence, corona, and prominences), **THE SHORE** (a beach with animated waves, sky/clouds, and a day→night environment-light slider that reveals a starfield), and **THE JEWELS** (the twelve birthstones on a clock-face ring: realtime refraction for the overview plus photoreal turntables rendered offline in Blender Cycles; rebuilt on 2026-09-27 from the prototype's seven-gem "THE GEMS"). Each scene has a floating "Environment" control panel (sliders) in the bottom-right.
 
 ## About the Design Files
 The bundled file(s) are **design references built in HTML/JS (Three.js r128, raw GLSL shaders, no React)** — prototypes proving out the visuals and interactions, not production code to import as-is. Your task is to **recreate this design inside the target codebase's actual stack** (Next.js + React Three Fiber, per the project brief) using that stack's conventions — not to `<iframe>` or copy-paste the HTML file directly.
@@ -52,33 +52,38 @@ Because this file is large (hand-written GLSL strings + scene-building JS, ~640 
   - 速さ *speed* — 0 to 1, step 0.02, default 0.45 → wave/animation time speed.
 - **Copy**: Eyebrow "SCENE 02 — BEACH", Title "THE SHORE", body "白い砂浜に、寄せては返す透きとおった波。環境光を落とせば夜が訪れ、満天の星が浮かびあがる。", hint "Drag to look around · Dim to night".
 
-### 3. THE GEMS (Scene 03 — Gems)
-- **Purpose**: showcase scene, seven distinct gemstones arranged in a static macro composition (per latest feedback: **no floating, no auto-rotation** — camera framing only, user can drag to orbit/tilt which eases back).
-- **Gem types & colors** (exactly seven, no more): Ruby `#B50D3A`, Sapphire `#0F52BA`, Emerald `#11A15A`, Topaz `#F5A81C`, Cobalt `#1B3FE8`, Amethyst `#7A3BB8`, Amber `#C9660A` (each also has a matching "deep" darker shade for internal color falloff).
-- **Geometry**: hand-built brilliant-cut-style gem meshes — a wide table facet on top, angled crown facets, a girdle, and a pavilion tapering to a culet underneath (parametrized per gem by facet-count, table ratio, crown height ratio, pavilion depth ratio, girdle ratio, and a flag for pointed vs. flat culet) — **not** primitive spheres/icosahedrons dressed up; the faceted silhouette is the main source of "gem-like" readability. ⚠️ Watch triangle winding order when porting — the crown/table faces must wind consistently with the rest of the hull or they'll cull/invert (this was a real bug hit during iteration).
-- **Material**: `MeshPhysicalMaterial`-style setup — high clearcoat, low roughness, transmission/opacity for glassy depth, per-gem deep-color emissive/inner-glow layer for the "fire" look, environment map reflections, all against a dark violet/plum velvet-like backdrop (soft radial gradient, not flat black) with a couple of soft off-scene point-light-driven color washes (warm key + cool violet fill) so facets catch varied reflections instead of looking flat/toy-like.
-- **Ground/setting**: a large, dark satin/velvet-toned surface beneath the gems, wide enough to show soft reflections, keeping the composition feeling like a jeweler's presentation rather than gems floating in a void.
-- **Controls (right panel, `pGem`)**:
-  - 光量 *light* — 0 to 3, step 0.05, default 1.4 → key light / env intensity.
-  - きらめき *sparkle* — 0 to 1, step 0.02, default 0.6 → sparkle-particle opacity/size and a per-gem emissive/envMapIntensity boost; clicking the scene also triggers a temporary "burst" boost to this same set of properties.
-- **Copy**: Eyebrow "SCENE 03 — GEMS", Title "THE GEMS", body "ルビーからアンバーまで、七つの宝石。光を閉じこめた切子面が、静かにきらめく。", hint "Drag to rotate · Click to sparkle".
+### 3. THE JEWELS (Scene 03 — Jewels)
+> Rebuilt on 2026-09-27 and replaces the prototype's seven-gem "THE GEMS" — the prototype's `buildGems()` is **no longer** the reference for this scene. Reference image: `.claude/references/birthstone-chart.jpg` (month → stone → cut → English meaning; kept locally only and not committed, since it is an external image — `lib/birthstones.json` is the source of truth when it is absent).
+- **Purpose**: the twelve birthstones (January → December) arranged like a clock face. Picking a month flies the camera to that stone and opens a detail panel with a photoreal, draggable turntable rendered offline in Blender Cycles — a hybrid of a realtime overview (touch / rotate) and offline photo quality.
+- **Stones** (month, cut, English meaning — as in the reference chart): Garnet (Jan, round, Protection), Amethyst (Feb, oval, Wisdom), Aquamarine (Mar, pear, Serenity), Diamond (Apr, round, Strength), Emerald (May, round, Hope), Pearl (Jun, sphere, Love), Ruby (Jul, round, Vitality), Peridot (Aug, oval, Beauty), Sapphire (Sep, oval, Truth), Pink Tourmaline (Oct, oval, Healing), Citrine (Nov, oval, Joy), Blue Topaz (Dec, oval, Friendship). All per-stone data (render color, UI accent color, IOR, dispersion, size, hardness, composition, origins, Japanese copy) lives in `lib/birthstones.json`, which is shared by the web app and the Blender scripts.
+- **Geometry**: modeled with the **JewelCraft** add-on in Blender (driven through BlenderMCP; the code is kept in `blender/build_jewels.py`) and exported to `public/jewels/jewels.glb` — one mesh node per stone id, millimetre units, flat facet normals, no materials. The pearl is a UV sphere (JewelCraft has no pearl).
+- **Layout**: a ring of radius 30 mm on the floor plane — 12 o'clock = far side (−Z), 3 = right (+X), 6 = near side (+Z), 9 = left (−X); elongated cuts point outward. Stones float 0.8 mm above a dark velvet floor with soft contact shadows; the far floor fades into the background (`#04060B`) with fog.
+- **Lighting**: one studio shared by both renderers — a dark vertical-gradient world plus two rings of strip lights, a small top softbox and four tiny "spark" lights (the 20–55° elevation band is kept dark so the table facet does not mirror a bright light). Cycles renders the turntables from it, and `blender/render_env.py` bakes it into `public/jewels/studio.hdr` (equirectangular Radiance HDR) for the realtime scene.
+- **Materials (realtime)**: drei `MeshRefractionMaterial` (BVH-traced internal bounces, 4 bounces, `fastChroma` dispersion, Fresnel rim 0.6) with the render color normalized and raised to the power 1.6 as the tint (a stand-in for Cycles' volume absorption); the pearl uses `MeshPhysicalMaterial` with iridescence (thin film) and clearcoat. While the scene is shown, the renderer switches to **Neutral** tone mapping + sRGB output and restores the Canvas' linear/flat settings on leave.
+- **Materials (Cycles)**: an RGB-split glass node group for dispersion (Blender 5.2's Glass/Principled BSDF have no dispersion input) plus a Volume Absorption interior whose density is tuned per stone; AgX view transform, exposure +1 EV.
+- **Camera & interaction**: drei `CameraControls` (drag = orbit, wheel / pinch = dolly, no pan). Selecting a month — from the button row under the tab bar or by tapping a stone — flies the camera to a pose outside the ring looking at that stone (taking the shortest azimuth path). The selected stone slowly spins, the other stones dim to 6 % brightness, a hovered stone lifts 1.2 mm, and Esc or the panel's close button returns to the overview.
+- **Detail panel** (right side, above the control panel): the Cycles turntable (48 frames × 640 px transparent WebP at `public/jewels/turntable/<id>/NN.webp`; drag to rotate, ‹ › step buttons, pause / resume for the autoplay — WCAG 2.2.2 — which starts paused under `prefers-reduced-motion`), the Japanese description, and a spec list (hardness, composition, IOR, dispersion, origins).
+- **Controls (right panel)**:
+  - 光量 *light* — 0 to 3, step 0.05, default 1 → renderer exposure (× 2 at 1, matching the Cycles exposure of +1 EV).
+  - 分散 *fire* — 0 to 1, step 0.02, default 0.5 → stone dispersion × fire × 0.8 → `aberrationStrength` (never exactly 0: drei rebuilds the material without its BVH when crossing 0).
+- **Copy**: Eyebrow "SCENE 03 — JEWELS", Title "THE JEWELS", body "一月のガーネットから十二月のブルートパーズまで、十二の誕生石。月を選べば、その石のもとへ。", hint "Drag to rotate · Pick a month". With a stone selected the hero shows e.g. "04 — April" / "DIAMOND" / "4月の誕生石、ダイヤモンド。石言葉は「強さ」（Strength）。" / "Drag to rotate · Esc to return".
 
 ## Interactions & Behavior
-- **Tab bar** (top center, pill-shaped, 3 tabs: Sun / Beach / Gems): click switches `tab` state; the corresponding `<canvas>` layer fades in via `opacity` transition (0.7s ease) while others fade out and lose `pointer-events`; hero copy and the control panel swap with `sc-if` blocks keyed to the active tab. Last-selected tab persists to `localStorage` (`ra-scene-tab`) and is restored on load (falls back to a `defaultTab` prop, default `"sun"`).
+- **Tab bar** (top center, pill-shaped, 3 tabs: Sun / Beach / Jewels): click switches `tab` state; the corresponding `<canvas>` layer fades in via `opacity` transition (0.7s ease) while others fade out and lose `pointer-events`; hero copy and the control panel swap with `sc-if` blocks keyed to the active tab. Last-selected tab persists to `localStorage` (`ra-scene-tab`) and is restored on load (falls back to a `defaultTab` prop, default `"sun"`).
 - **Drag-to-orbit**: pointer-down + move on the active canvas rotates the camera/scene group around the subject; releasing lets rotation velocity ease out (damped). Implemented per-scene in each scene's own pointer handlers (not a shared OrbitControls instance) — check the `wire(s, canvas)` method and each scene's `tick` handling of `s.rotX/rotY/vx/vy`.
-- **Click-to-flare / click-to-sparkle**: a plain click (not a drag) on Sun triggers an extra flare/prominence event; on Gems it triggers a temporary "burst" that boosts light/sparkle intensity briefly then decays.
+- **Click-to-flare**: a plain click (not a drag) on Sun triggers an extra flare/prominence event. (The prototype's click-to-sparkle on Gems was dropped with the JEWELS rebuild — on Jewels a plain click on a stone selects its month.)
 - **Resize**: window resize listener updates renderer size and camera aspect for whichever scenes are built.
 - **Render loop**: single shared `requestAnimationFrame` tick drives all three scenes' uniform updates each frame (only the active scene really needs to render — consider only calling `renderer.render()` for the active scene in the ported version to save GPU, while still advancing state for a smooth reveal on tab switch).
 
 ## State Management
-- `tab`: `'sun' | 'oce' | 'gem'` — active scene.
-- Per-scene slider state (mirrors the panel sliders above): `sunAmb, sunRot, sunMera`; `oceAmb, oceWave, oceSpeed`; `gemAmb, gemRot, gemSpark` (note: `gemRot` exists in state but auto-rotation is now disabled per latest feedback — treat as vestigial/remove).
+- `tab`: `'sun' | 'oce' | 'jewel'` — active scene.
+- Per-scene slider state (mirrors the panel sliders above): `sunAmb, sunRot, sunMera`; `oceAmb, oceWave, oceSpeed`; `jewel.amb, jewel.fire`; plus the selected birthstone id (`null` = overview), shared by the 3D scene, the month buttons, the hero and the detail panel.
 - Each scene keeps its own Three.js objects (renderer, scene, camera, meshes, materials) in a plain (non-React-state) registry object so per-frame mutation doesn't trigger re-renders — in the R3F port this maps naturally to refs + `useFrame`, not React state, for anything animated every frame.
 
 ## Design Tokens
 - **Background**: `#04060B` (app shell behind all canvases).
 - **Text**: `#F6F5F1` (near-white) over scenes, with a soft radial vignette overlay (`rgba(0,0,0,.36)` at edges) for legibility.
-- **Accent per scene** (used for that scene's slider thumb/value color and panel status dot): Sun `#FFC93C`, Beach `#66D9FF`, Gems `#E8B4FF`.
+- **Accent per scene** (used for that scene's slider thumb/value color and panel status dot): Sun `#FFC93C`, Beach `#66D9FF`, Jewels `#E8B4FF`.
 - **Fonts**: `Space Grotesk` (700, headlines), `Manrope` (400–800, body/UI), `Zen Kaku Gothic New` (400/500/700, Japanese body copy), `Space Mono` (400/700, labels/mono UI/eyebrows) — all via Google Fonts.
 - **Panel chrome**: translucent dark glass — `rgba(9,10,16,.6)` background, `blur(16px)` backdrop-filter, `1px solid rgba(255,255,255,.16)` border, `18px` border radius, soft large drop shadow.
 - **Type scale**: eyebrow 12px / letter-spacing .26em; title 76px / weight 700 / line-height .9 / letter-spacing -.03em; tagline 16px / line-height 1.7; hint/labels 11–13px mono.
@@ -93,7 +98,7 @@ No external image/texture assets — all visuals are procedural (GLSL noise/shad
   - Logic class `Component`: single `<script>` block after the template. Key methods to port scene-by-scene:
     - `buildSun()`, `sunMaterial()`, `haloMaterial()`, prominence particle setup/tick logic — Sun scene.
     - `buildOcean()` and its shader strings (`skyBase`, `nightSky`, water vertex/fragment shaders, sand shader) — Beach scene.
-    - `buildGems()`, gem geometry builder (facet/table/crown/pavilion construction), gem material setup — Gems scene.
+    - `buildGems()`, gem geometry builder (facet/table/crown/pavilion construction), gem material setup — the original Gems scene (historical only; THE JEWELS no longer ports it).
     - `tick()` — shared per-frame update loop (uniform updates, camera easing, per-scene `s.*` state).
     - `this.NOISE` — shared simplex-noise + fbm GLSL string reused across all shaders.
 - `export-src.dc.html` / `Portfolio Site (standalone).html` — bundled/offline copies of the same design (for viewing in a browser only; not needed for implementation, safe to ignore for the port).

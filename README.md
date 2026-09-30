@@ -7,10 +7,11 @@
 | ------------- | ----------------------------------------------------------------------------- | ---------------------------------------------- |
 | **THE SUN**   | 燃えさかる太陽の表面と、そこから噴き上がるプロミネンス（炎の柱）              | ドラッグで回転 / クリックでフレア               |
 | **THE SHORE** | 白い砂浜に寄せては返す波。環境光を落とすと夜になり、星空が浮かびあがる        | ドラッグで見回す / スライダーで昼夜を切り替え   |
-| **THE GEMS**  | ルビーからアンバーまで 7 つの宝石。切子面が光を受けてきらめく                  | ドラッグで回転 / クリックできらめき             |
+| **THE JEWELS** | 1 月〜12 月の誕生石を時計の文字盤のように並べる。月を選ぶとその石へカメラが寄り、写真のような回転画像と説明が出る | ドラッグで回転 / 月のボタンか石のタップで選ぶ / Esc で全体に戻る |
 
 どのシーンも右下のパネルのスライダーで、明るさや波の高さなどをその場で変えられます。
-映像は画像や動画ではなく、すべて **GPU でリアルタイムに描いています**（シェーダーという小さなプログラムで、ピクセルの色を毎フレーム計算しています）。
+映像は画像や動画ではなく、**GPU でリアルタイムに描いています**（シェーダーという小さなプログラムで、ピクセルの色を毎フレーム計算しています）。
+ただし THE JEWELS の詳細パネルの写真だけは、**Blender の Cycles（光の経路を追いかけて描くレンダラー）で事前に描いた連番画像**です。リアルタイムの「回して触れる」体験と、写真のようなリアルさを組み合わせています。
 
 > このリポジトリは **Next.js・React Three Fiber・シェーダーの学習** を目的にしています。
 > そのため、コードのほぼすべての行に日本語のコメントを付けています。
@@ -30,6 +31,8 @@
 | [Biome](https://biomejs.dev)                                        | コードの整形とチェック（書き方の統一、よくある間違いの検出）            |
 | [Vitest](https://vitest.dev)                                        | 自動テスト                                                              |
 | [lefthook](https://lefthook.dev)                                    | コミットの直前に、チェックとテストを自動で実行する                      |
+| [Blender](https://www.blender.org) 5.2 + [JewelCraft](https://github.com/mrachinskiy/jewelcraft) | 誕生石の形のモデリング（JewelCraft）と、写真のような連番画像・環境マップの描画（Cycles） |
+| [glTF](https://www.khronos.org/gltf/)（.glb）                       | Blender で作った 3D の形を Web で読み込むためのファイル形式             |
 
 ---
 
@@ -94,6 +97,29 @@ pnpm dev
 
 ---
 
+## 誕生石の 3D データと写真を作り直す（Blender）
+
+THE JEWELS の資産（`public/jewels/` の形・環境マップ・連番画像）は、[blender/](blender/) の Python スクリプトで作っています。
+石の色や大きさなどのデータは [lib/birthstones.json](lib/birthstones.json) にまとまっていて、Web と Blender の両方がこのファイルを読みます。データを変えたら、次の順に作り直してください（詳しくは [blender/README.md](blender/README.md)）。
+
+```bash
+# Windows の Blender を WSL から動かす例（パスは環境に合わせる）
+BLENDER="/mnt/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"
+
+# 1. JewelCraft で 12 石を組み立て、blender/jewels.blend と public/jewels/jewels.glb を作る
+"$BLENDER" --background --factory-startup --python "$(wslpath -w blender/build_jewels.py)"
+
+# 2. スタジオの照明を環境マップ（public/jewels/studio.hdr）に焼く
+"$BLENDER" --background "$(wslpath -w blender/jewels.blend)" --python "$(wslpath -w blender/render_env.py)"
+
+# 3. Cycles で 12 石 × 48 枚の回転の連番（public/jewels/turntable/）を描く（CPU だと 2 時間ほどかかる）
+"$BLENDER" --background "$(wslpath -w blender/jewels.blend)" --python "$(wslpath -w blender/render_turntables.py)"
+```
+
+作り直したら `pnpm test` を実行してください。`.glb` のノード名や連番画像の枚数が、コードの期待と合っているかを確かめるテストがあります。
+
+---
+
 ## フォルダの構成
 
 ```plain text
@@ -104,17 +130,22 @@ pnpm dev
 │   └── globals.css               #   全体の CSS と色・フォントの定義
 ├── components/                   # 画面の部品（React コンポーネント）
 │   ├── PortfolioExperience.tsx   #   サイト全体のまとめ役。3D キャンバスと UI を並べる
-│   ├── scenes/                   #   各シーンの React 側（Sun / Ocean / Gems）
-│   └── ui/                       #   3D の上に重ねるタブ・見出し・操作パネル
+│   ├── SceneErrorBoundary.tsx    #   3D の表示に失敗したとき、画面が真っ白にならないよう知らせる
+│   ├── scenes/                   #   各シーンの React 側（Sun / Ocean / Jewels）
+│   └── ui/                       #   3D の上に重ねるタブ・見出し・操作パネル・月のボタン・詳細パネル
 ├── lib/                          # 画面を持たないロジック
 │   ├── scene.ts                  #   シーンの種類・初期値・文言・スライダーの定義
+│   ├── birthstones.json / .ts    #   12 か月の誕生石のデータ（Web と Blender で共有）と、その型・検証
+│   ├── turntable.ts              #   連番画像のビューアの計算（ドラッグ量 → 表示する番号）
 │   ├── scenes/                   #   各シーンの 3D の組み立てと毎フレームの更新
 │   ├── shaders.ts                #   シーン共通のシェーダー部品（ノイズ関数）
 │   ├── textures.ts               #   光のにじみなどのテクスチャを作る
 │   ├── useDragInteraction.ts     #   マウス・タッチのドラッグ操作
 │   └── *.test.ts                 #   テスト（テスト対象と同じ場所に置く）
+├── blender/                      # 誕生石の形・環境マップ・連番画像を作る Blender の Python スクリプト
+├── public/jewels/                # Blender で作った資産（.glb・.hdr・連番の .webp）。/jewels/... の URL で配信される
 ├── docs/                         # 学習用の解説
-├── .claude/                      # デザインの参照資料（元になったプロトタイプ）
+├── .claude/                      # デザインの参照資料（元になったプロトタイプと参照画像）
 ├── AGENTS.md                     # AI エージェント（Claude Code など）向けの作業ルール
 ├── biome.jsonc                   # Biome（整形・チェック）の設定
 ├── lefthook.yml                  # コミット時の自動チェックの設定
