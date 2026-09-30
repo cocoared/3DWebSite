@@ -1,41 +1,55 @@
 // このモジュールは、3つのシーンを横断して使う「型」と「定数データ」を1か所に集約する。
 // UI(ナビ・見出し・操作パネル)をこのデータから組み立てることで、文言や範囲の変更をここだけで完結できる。
 
-// SceneTab: 表示中のシーンを表す識別子。'sun'=太陽, 'oce'=浜辺(ocean), 'gem'=宝石。
-export type SceneTab = "sun" | "oce" | "gem";
+/** 表示中のシーンの識別子。`"sun"` = 太陽、`"oce"` = 浜辺（ocean）、`"jewel"` = 誕生石（THE JEWELS）。 */
+export type SceneTab = "sun" | "oce" | "jewel";
 
 // SunParams: 太陽シーンの操作パラメータ。amb=明るさ, rot=自動回転速度, mera=炎(コロナ)の揺らぎ量。
 export interface SunParams {
+  // 明るさ。0〜3。シェーダーの uBright に渡る
   amb: number;
+  // 自動回転の速さ。0〜2
   rot: number;
+  // 炎（コロナ）の揺らぎの量。0〜1。シェーダーの uMera に渡る
   mera: number;
 }
 
 // OceParams: 浜辺シーンの操作パラメータ。amb=環境光(昼夜), wave=波の高さ, speed=波の速さ。
 export interface OceParams {
+  // 環境光。0 = 夜 〜 1 = 昼
   amb: number;
+  // 波の高さ。0〜1
   wave: number;
+  // 波の速さ。0〜1
   speed: number;
 }
 
-// GemParams: 宝石シーンの操作パラメータ。amb=光量, spark=きらめきの強さ。
-export interface GemParams {
+/** 誕生石シーン（THE JEWELS）の操作パラメータ。 */
+export interface JewelParams {
+  /** 光量。0〜3。レンダラーの露出（toneMappingExposure）の倍率で、1 のとき Cycles の連番画像と同じ明るさになる。 */
   amb: number;
-  spark: number;
+  /** 分散（虹色のきらめき＝ファイア）の強さ。0〜1。石ごとの分散の値に掛けて MeshRefractionMaterial に渡す。 */
+  fire: number;
 }
 
 // SceneParams: 3シーンぶんのパラメータをまとめた全体の状態。
 export interface SceneParams {
+  // 太陽シーン
   sun: SunParams;
+  // 浜辺シーン
   oce: OceParams;
-  gem: GemParams;
+  // 誕生石シーン
+  jewel: JewelParams;
 }
 
 // DEFAULT_PARAMS: 初期表示時のパラメータ値。
 export const DEFAULT_PARAMS: SceneParams = {
+  // 太陽: 明るさ 1.5・自動回転 0.5・揺らぎ 0.55
   sun: { amb: 1.5, rot: 0.5, mera: 0.55 },
+  // 浜辺: 昼寄り 0.85・波の高さ 0.5・速さ 0.45
   oce: { amb: 0.85, wave: 0.5, speed: 0.45 },
-  gem: { amb: 1.4, spark: 0.6 },
+  // 誕生石: 光量 1（Cycles と同じ明るさ）・分散 0.5（控えめなファイア）
+  jewel: { amb: 1, fire: 0.5 },
 };
 
 // STORAGE_KEY: 最後に開いていたシーンを localStorage に保存するときのキー名。
@@ -43,10 +57,26 @@ export const STORAGE_KEY = "scene-tab";
 
 // TABS: 画面上部のタブ切り替えボタンの定義(識別子と表示ラベル)。
 export const TABS: { id: SceneTab; label: string }[] = [
+  // 太陽
   { id: "sun", label: "Sun" },
+  // 浜辺
   { id: "oce", label: "Beach" },
-  { id: "gem", label: "Gems" },
+  // 誕生石
+  { id: "jewel", label: "Jewels" },
 ];
+
+/**
+ * localStorage などから読んだ値を、実在するタブの識別子として確かめる。
+ *
+ * @param value - 保存されていた値（文字列とは限らない）
+ * @returns タブの識別子。知らない値（改名前の `"gem"` など）のときは `null` を返すので、呼び出し側で初期のタブに戻す
+ */
+export function parseSceneTab(value: unknown): SceneTab | null {
+  // TABS に同じ id があるときだけ受け入れる（文字列でない値は一致しない）
+  const tab = TABS.find((candidate) => candidate.id === value);
+  // 見つかればその id、無ければ null
+  return tab ? tab.id : null;
+}
 
 // HeroContent: 各シーンの左下に出す見出しブロックの文言。
 export interface HeroContent {
@@ -58,27 +88,51 @@ export interface HeroContent {
   tag: string;
   // 操作方法のヒント(例: Drag to orbit · Click to flare)
   hint: string;
+  // 読み上げ専用の短い知らせ（画面には出さない。例: 浜辺のシーンを表示しています。）。
+  // タブを切り替えたときや石を選んだときに、見出し全体の代わりに「何を表示しているか」だけを読み上げさせる
+  announcement: string;
 }
 
 // HERO: シーンごとの見出し文言をまとめたテーブル。
 export const HERO: Record<SceneTab, HeroContent> = {
+  // 太陽シーンの見出し
   sun: {
+    // 上付きラベル
     eyebrow: "Scene 01 — Solar",
+    // タイトル
     title: "THE SUN",
+    // 説明文
     tag: "燃えつづける恒星。燃えさかる表面と、そこから噴き上がるプロミネンス。すべてリアルタイム描画。",
+    // 操作のヒント
     hint: "Drag to orbit · Click to flare",
+    // 読み上げの知らせ
+    announcement: "太陽のシーンを表示しています。",
   },
+  // 浜辺シーンの見出し
   oce: {
+    // 上付きラベル
     eyebrow: "Scene 02 — Beach",
+    // タイトル
     title: "THE SHORE",
+    // 説明文
     tag: "白い砂浜に、寄せては返す透きとおった波。環境光を落とせば夜が訪れ、満天の星が浮かびあがる。",
+    // 操作のヒント
     hint: "Drag to look around · Dim to night",
+    // 読み上げの知らせ
+    announcement: "浜辺のシーンを表示しています。",
   },
-  gem: {
-    eyebrow: "Scene 03 — Gems",
-    title: "THE GEMS",
-    tag: "ルビーからアンバーまで、七つの宝石。光を閉じこめた切子面が、静かにきらめく。",
-    hint: "Drag to rotate · Click to sparkle",
+  // 誕生石シーンの見出し（石を選ぶ前。選んだあとは lib/scenes/jewels.ts の jewelHero が作る）
+  jewel: {
+    // 上付きラベル
+    eyebrow: "Scene 03 — Jewels",
+    // タイトル
+    title: "THE JEWELS",
+    // 説明文
+    tag: "一月のガーネットから十二月のブルートパーズまで、十二の誕生石。月を選べば、その石のもとへ。",
+    // 操作のヒント
+    hint: "Drag to rotate · Pick a month",
+    // 読み上げの知らせ（タブを切り替えてきたとき。石の選択を外して戻ったときは lib/scenes/jewels.ts の overviewHero が別の文にする）
+    announcement: "12 か月の誕生石を並べたシーンを表示しています。",
   },
 };
 
@@ -101,19 +155,30 @@ export interface SliderDef {
 
 // SLIDERS: シーンごとの操作スライダー定義。UI はこの配列を回してパネルを描画する。
 export const SLIDERS: Record<SceneTab, SliderDef[]> = {
+  // 太陽シーンのスライダー
   sun: [
+    // 光量
     { field: "amb", name: "光量", unit: "brightness", min: 0, max: 3, step: 0.05 },
+    // 自動回転
     { field: "rot", name: "自動回転", unit: "orbit", min: 0, max: 2, step: 0.05 },
+    // 炎のゆらめき
     { field: "mera", name: "炎のゆらめき", unit: "corona", min: 0, max: 1, step: 0.02 },
   ],
+  // 浜辺シーンのスライダー
   oce: [
+    // 環境光（昼夜）
     { field: "amb", name: "環境光", unit: "day / night", min: 0, max: 1, step: 0.01 },
+    // 波の高さ
     { field: "wave", name: "波の高さ", unit: "swell", min: 0, max: 1, step: 0.02 },
+    // 波の速さ
     { field: "speed", name: "速さ", unit: "speed", min: 0, max: 1, step: 0.02 },
   ],
-  gem: [
+  // 誕生石シーンのスライダー
+  jewel: [
+    // 光量（露出）
     { field: "amb", name: "光量", unit: "light", min: 0, max: 3, step: 0.05 },
-    { field: "spark", name: "きらめき", unit: "sparkle", min: 0, max: 1, step: 0.02 },
+    // 分散（虹色のきらめき）
+    { field: "fire", name: "分散", unit: "fire", min: 0, max: 1, step: 0.02 },
   ],
 };
 
@@ -124,6 +189,6 @@ export const PANEL_ACCENT: Record<SceneTab, string> = {
   sun: "#ffc93c",
   // 浜辺: 水色
   oce: "#66d9ff",
-  // 宝石: 藤色
-  gem: "#e8b4ff",
+  // 誕生石: 藤色（旧 GEMS の色を引き継ぐ）
+  jewel: "#e8b4ff",
 };

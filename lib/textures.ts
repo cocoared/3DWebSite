@@ -50,30 +50,6 @@ export function makeGlow(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
-// makeSoft: 白から透明へ滑らかに消える汎用の「柔らかい丸」テクスチャ。宝石シーンの背景の光などに使う。
-export function makeSoft(): THREE.CanvasTexture {
-  // 一時 canvas を生成する
-  const c = document.createElement("canvas");
-  // 128×128 ピクセル(発光ボケ用なので低めの解像度で十分)
-  c.width = c.height = 128;
-  // 2D コンテキストを取得する(取得できなければ get2dContext がエラーにする)
-  const x = get2dContext(c);
-  // 中心(64,64)から半径64の放射状グラデーション
-  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-  // 中心は不透明な白
-  g.addColorStop(0, "rgba(255,255,255,1)");
-  // 40%地点で白のまま半透明に
-  g.addColorStop(0.4, "rgba(255,255,255,0.4)");
-  // 外周は完全に透明
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  // グラデーションを塗りに設定する
-  x.fillStyle = g;
-  // 全面を塗って柔らかい光の円を描く
-  x.fillRect(0, 0, 128, 128);
-  // three.js のテクスチャにして返す
-  return new THREE.CanvasTexture(c);
-}
-
 // makeStar: 中心が鋭く光り、周囲へ暖色ににじむ「星/きらめき」用の小さなテクスチャ。点群やきらめきスプライトに使う。
 export function makeStar(): THREE.CanvasTexture {
   // 一時 canvas を生成する

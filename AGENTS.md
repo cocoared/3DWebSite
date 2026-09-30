@@ -1,6 +1,6 @@
 # 3dwebsite — エージェント向けプロジェクト指示
 
-3 つのフルスクリーン WebGL シーン（**THE SUN / THE SHORE / THE GEMS**）をタブで切り替える、1 ページ構成の 3D ポートフォリオサイト。
+3 つのフルスクリーン WebGL シーン（**THE SUN / THE SHORE / THE JEWELS**）をタブで切り替える、1 ページ構成の 3D ポートフォリオサイト。
 Next.js 16（App Router）+ React 19 + React Three Fiber（`@react-three/fiber` / `@react-three/drei`）+ three.js + Tailwind CSS v4。パッケージマネージャは **pnpm**。
 主目的は **Next.js・React Three Fiber・GLSL シェーダーの学習**。後から読み返して理解できることを、短く書くことより優先する。
 
@@ -22,6 +22,7 @@ Next.js 16（App Router）+ React 19 + React Three Fiber（`@react-three/fiber` 
 | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
 | [.claude/README.md](.claude/README.md)                             | 3 シーンの仕様書。色・スライダーの範囲と初期値・文言・シェーダーの層構成・操作方法              | シーンの見た目や操作を変えるとき、「本来どう見えるべきか」を確認するとき |
 | [.claude/Portfolio Site.dc.html](<.claude/Portfolio Site.dc.html>) | 動くプロトタイプ（Three.js r128 + 生の GLSL）。**シェーダーの数式・色のランプ・波の関数の正解** | シェーダーを移植・修正するとき                                           |
+| [.claude/references/birthstone-chart.jpg](.claude/references/birthstone-chart.jpg) | THE JEWELS の参照画像。12 か月の誕生石の色・カット（形）・英語の石言葉 | 誕生石の形・色・文言を決めるとき |
 | [docs/用語集.md](docs/用語集.md)                                   | このプロジェクトに出てくる専門用語の辞書                                                        | 知らない言葉が出てきたとき、新しい用語を導入したとき                     |
 | [docs/警告とTODOの解説.md](docs/警告とTODOの解説.md)               | 過去に出た警告の原因と対処、TODO コメントへの回答                                               | 同じ警告が出たとき、似た疑問が出たとき                                   |
 
@@ -42,6 +43,13 @@ Next.js 16（App Router）+ React 19 + React Three Fiber（`@react-three/fiber` 
 | 2026-09-27 | Lint・整形を ESLint + Prettier から Biome に一本化                                     | ツールを 1 つにして設定と実行を速く・単純にするため                    |
 | 2026-09-27 | コミット前チェックに lefthook を使い、Biome は検査のみ（自動修正しない）               | 自動修正 + 再ステージは、部分ステージ時に作業中の変更を失うおそれがあるため |
 | 2026-09-27 | テストに Vitest を導入。環境は `node`、対象は `lib/` の純粋なロジック                  | WebGL はテスト環境で動かないため、計算を切り出してテストする方針       |
+| 2026-09-27 | THE GEMS（手作りの 7 石）を THE JEWELS（12 か月の誕生石）に作り直す。ファイル名・タブ id・表示も jewels にそろえる | ユーザーの要望。プロトタイプの `buildGems` は今後の参照元にしない |
+| 2026-09-27 | 宝石の形は Blender の JewelCraft で作り、glTF（.glb）で読み込む。Blender は BlenderMCP で操作し、実行したコードは `blender/` にスクリプトとして残す | 実物のカット形状を使うため。スクリプトを残せば同じ結果を作り直せる |
+| 2026-09-27 | 表示はハイブリッド。一覧と選択はリアルタイム（drei の `MeshRefractionMaterial`）、詳細パネルでは Cycles で描いた回転の連番画像をドラッグで回す | 「回して触れる体験」と「写真のようなリアルさ」を両立するため |
+| 2026-09-27 | 12 石は時計の文字盤の位置に並べ、月は画面のボタン列（HTML）で選ぶ。カメラの移動は drei の `CameraControls` | 月と位置の対応が直感的。HTML のボタンならキーボードやスクリーンリーダーでも操作できる |
+| 2026-09-27 | 誕生石のデータは `lib/birthstones.json` に集約し、Web（`lib/birthstones.ts` で型付けと検証）と Blender のスクリプトの両方が読む | 色・屈折率・分散などが Web と Cycles で食い違わないようにするため |
+| 2026-09-27 | JEWELS は表示している間だけ、レンダラーを Neutral トーンマッピング + sRGB 出力に切り替え、離れるときに戻す（`<Canvas linear flat>` は変えない） | 太陽・浜辺は linear / flat 前提の色なので。AgX だと屈折で強く光るルビーなどが桃色に褪せたため |
+| 2026-09-27 | 石を選んでいる間は、ほかの 11 石を 6% の明るさに沈める（画角は変えない） | 主役の石の大きさを保つと、画角を狭めても隣の石の画面上の位置は変わらないため |
 
 ---
 
@@ -102,17 +110,24 @@ TSDoc は呼び出し側のエディタのホバーと補完に表示される�
 ├── app/                      # Next.js App Router（layout / page / globals.css）
 ├── components/
 │   ├── PortfolioExperience.tsx   # クライアント側のルート。単一 <Canvas> と UI を束ねる
+│   ├── SceneErrorBoundary.tsx    # <Canvas> の中のエラーを受け止めて知らせる
 │   ├── scenes/               # 各シーンの React 側（フック・JSX だけ）
-│   └── ui/                   # キャンバスに重ねる HTML の UI（ナビ・見出し・操作パネル）
+│   └── ui/                   # キャンバスに重ねる HTML の UI（ナビ・見出し・操作パネル・月のボタン・詳細パネル）
 ├── lib/
 │   ├── scene.ts              # 3 シーン共通の型・初期値・文言・スライダー定義
-│   ├── scenes/               # 各シーンのロジック（build / createAnim / update / dispose）
+│   ├── birthstones.json/.ts  # 12 か月の誕生石のデータ（Web と Blender で共有）と、その型・検証
+│   ├── turntable.ts          # 連番画像のビューアの計算
+│   ├── scenes/               # 各シーンのロジック（build / createAnim / update / dispose、配置やカメラの計算）
 │   ├── shaders.ts            # 共通 GLSL（simplex noise + fbm）
 │   ├── textures.ts           # プログラムで生成するテクスチャ
 │   └── useDragInteraction.ts # ドラッグ慣性・タップのフック
+├── blender/                  # THE JEWELS の資産を作る Blender の Python スクリプト（BlenderMCP / ヘッドレスで実行）
+├── public/jewels/            # Blender で作った資産（jewels.glb・studio.hdr・turntable/*.webp）
 ├── docs/                     # 学習用の解説ドキュメント
-└── .claude/                  # デザイン参照（README とプロトタイプ）
+└── .claude/                  # デザイン参照（README とプロトタイプ、参照画像）
 ```
+
+- **Blender のスクリプト（`blender/*.py`）もコメント方針（§2）の対象。** 資産を作り直したら `pnpm test` で `.glb` のノード名・HDR の形式・連番の枚数を確かめる。
 
 - **シーンを増やす・変えるときは「`lib/scenes/xxx.ts` にロジック、`components/scenes/XxxScene.tsx` にフックと JSX」の分担を守る。** `lib/scenes/` は React を import しない。
 - 文言・スライダーの範囲・初期値は `lib/scene.ts` に集約する。コンポーネントに直書きしない。
@@ -212,8 +227,8 @@ TSDoc は呼び出し側のエディタのホバーと補完に表示される�
 | ジョブ      | 内容                                                     | 動く条件                                   |
 | ----------- | -------------------------------------------------------- | ------------------------------------------ |
 | `biome`     | コミットするファイルだけを Biome で検査（書き換えない）  | JS / TS / JSON / CSS がコミットに含まれる  |
-| `typecheck` | プロジェクト全体の型チェック                             | TS がコミットに含まれる                    |
-| `test`      | Vitest を 1 回実行                                       | TS がコミットに含まれる                    |
+| `typecheck` | プロジェクト全体の型チェック                             | TS か JSON がコミットに含まれる            |
+| `test`      | Vitest を 1 回実行                                       | TS か JSON がコミットに含まれる（`lib/birthstones.json` だけの変更でも検証する） |
 
 - **フックで落ちたら、原因を直してからコミットし直す。`--no-verify` や `LEFTHOOK=0` で飛ばさない**（ユーザーに明示的に頼まれた場合を除く）。
 - Biome の指摘は `pnpm lint:fix` で直し、`git add` し直す。

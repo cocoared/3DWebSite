@@ -14,7 +14,11 @@ export default function SceneNav({ active, onSelect }: SceneNavProps) {
     // header: ナビ全体のコンテナ。タブを中央寄せする。
     <header className="flex items-center justify-center">
       {/* tabs: 中央のシーン切り替えボタンを丸いガラス風バーにまとめる。 */}
-      <nav className="pointer-events-auto flex gap-1.25 rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] p-1.25 backdrop-blur-[14px]">
+      {/* aria-label: 誕生石シーンでは月のボタン列（MonthPicker）も <nav> になるので、読み上げで 2 つを区別できるよう名前を付ける */}
+      <nav
+        aria-label="シーンを選ぶ"
+        className="pointer-events-auto flex gap-1.25 rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] p-1.25 backdrop-blur-[14px]"
+      >
         {TABS.map((tab) => {
           // isActive: このタブが現在選択中か。
           const isActive = active === tab.id;
@@ -24,6 +28,11 @@ export default function SceneNav({ active, onSelect }: SceneNavProps) {
               // type="button": 既定の type="submit" だと、将来 <form> の中に置いたときにフォーム送信が走ってしまうため明示する
               type="button"
               key={tab.id}
+              // lang="en": ラベル（Sun / Beach / Jewels）を英語として読み上げさせる（ページ全体は日本語）
+              lang="en"
+              // aria-current: 今表示しているシーンのタブを読み上げでも伝える（色の違いだけに頼らない）。
+              // aria-pressed にしないのは、押しても選択を外せない（月のボタンのような切り替えではない）ため
+              aria-current={isActive ? "true" : undefined}
               onClick={() => onSelect(tab.id)}
               // 前半は常時適用、後半の三項演算子で選択中/非選択のスタイルを差し替える。
               // [] は Tailwind の任意値(既定の階段に無い値を直接指定)、/60 は不透明度。

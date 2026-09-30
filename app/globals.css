@@ -40,6 +40,12 @@
   background: rgba(255, 255, 255, 0.16);
   margin: 0;
 }
+/* キーボードで選んだときだけ、スライダーの周りに枠を出す（上の outline: none で消えた枠の代わり。WCAG 2.4.7）。
+   :focus-visible なので、マウスで触ったときは出ない。色はシーンのアクセント色。4px 離して、細いトラックやつまみに重ならないようにする。 */
+.rng:focus-visible {
+  outline: 2px solid var(--accent, #fff);
+  outline-offset: 4px;
+}
 /* スライダーのつまみ（WebKit）。色はシーンのアクセント色。 */
 .rng::-webkit-slider-thumb {
   -webkit-appearance: none;
