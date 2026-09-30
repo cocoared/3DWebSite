@@ -24,8 +24,6 @@ import {
 } from "@/lib/scene";
 import { jewelHero, overviewHero, toggleStone } from "@/lib/scenes/jewels";
 
-// PortfolioExperience: サイト全体のクライアント側ルート。1枚の WebGL キャンバス上でシーンを切り替え、UI を重ねる。
-// (シーンごとにキャンバスを分けると WebGL コンテキストが増えて不具合が出やすいため、単一キャンバス+シーン差し替え方式にしている。)
 // readSavedTab: 前回開いていたシーンを localStorage から復元する(なければ太陽)。
 // このコンポーネントは page 側で ssr:false 指定のためクライアントでのみ実行され、localStorage を安全に読める。
 function readSavedTab(): SceneTab {
@@ -38,6 +36,8 @@ function readSavedTab(): SceneTab {
   }
 }
 
+// PortfolioExperience: サイト全体のクライアント側ルート。1枚の WebGL キャンバス上でシーンを切り替え、UI を重ねる。
+// (シーンごとにキャンバスを分けると WebGL コンテキストが増えて不具合が出やすいため、単一キャンバス+シーン差し替え方式にしている。)
 export default function PortfolioExperience() {
   // tab: 現在表示中のシーン。初回だけ localStorage から復元する(遅延初期化)。
   const [tab, setTab] = useState<SceneTab>(readSavedTab);
@@ -123,8 +123,9 @@ export default function PortfolioExperience() {
   const hero = detail ? jewelHero(detail) : overview;
 
   return (
-    // app: 全画面の背景コンテナ。3D キャンバスと UI を絶対配置で重ねる土台。
-    <div className="relative h-screen w-screen overflow-hidden bg-ink">
+    // main: ページの本文（ランドマーク）。読み上げソフトで「本文へ移動」したときの行き先になる。
+    // 全画面の背景コンテナを兼ね、3D キャンバスと UI を絶対配置で重ねる土台にする
+    <main className="relative h-screen w-screen overflow-hidden bg-ink">
       {/* キャンバスの中で起きたエラー（宝石の .glb が読めないなど）を捕まえて知らせる。タブを替えたら描き直す。 */}
       <SceneErrorBoundary resetKey={tab}>
         {/* 単一の 3D キャンバス。色味を元デザインに合わせて linear(色変換なし)+flat(トーンマップなし)にする。 */}
@@ -190,6 +191,6 @@ export default function PortfolioExperience() {
           {hero.announcement}
         </p>
       </div>
-    </div>
+    </main>
   );
 }

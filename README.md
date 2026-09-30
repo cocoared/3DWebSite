@@ -127,6 +127,7 @@ BLENDER="/mnt/c/Program Files/Blender Foundation/Blender 5.2/blender.exe"
 ├── app/                          # ページの入口（Next.js の App Router）
 │   ├── layout.tsx                #   全ページ共通の枠（フォント・<html> など）
 │   ├── page.tsx                  #   トップページ
+│   ├── error.tsx                 #   ページで起きたエラーの受け皿（真っ白にせず、再試行と再読み込みのボタンを出す）
 │   └── globals.css               #   全体の CSS と色・フォントの定義
 ├── components/                   # 画面の部品（React コンポーネント）
 │   ├── PortfolioExperience.tsx   #   サイト全体のまとめ役。3D キャンバスと UI を並べる

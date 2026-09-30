@@ -50,6 +50,8 @@ Next.js 16（App Router）+ React 19 + React Three Fiber（`@react-three/fiber` 
 | 2026-09-27 | 誕生石のデータは `lib/birthstones.json` に集約し、Web（`lib/birthstones.ts` で型付けと検証）と Blender のスクリプトの両方が読む | 色・屈折率・分散などが Web と Cycles で食い違わないようにするため |
 | 2026-09-27 | JEWELS は表示している間だけ、レンダラーを Neutral トーンマッピング + sRGB 出力に切り替え、離れるときに戻す（`<Canvas linear flat>` は変えない） | 太陽・浜辺は linear / flat 前提の色なので。AgX だと屈折で強く光るルビーなどが桃色に褪せたため |
 | 2026-09-27 | 石を選んでいる間は、ほかの 11 石を 6% の明るさに沈める（画角は変えない） | 主役の石の大きさを保つと、画角を狭めても隣の石の画面上の位置は変わらないため |
+| 2026-09-30 | エラーの受け皿は 2 段。キャンバスの中は `SceneErrorBoundary`、それ以外は `app/error.tsx`（再試行と再読み込みのボタン）。`global-error.tsx` は置かない | 画面を真っ白にしないため。`layout.tsx` は静的で落ちる要素がほぼないので、ルートレイアウト用の受け皿は必要になってから |
+| 2026-09-30 | 全画面の外枠を `<main>` にし、エラー画面が出たら見出しへフォーカスを移す | 読み上げソフトで本文へ飛べるようにするため。消えたボタンからフォーカスが `<body>` に落ちて迷子にならないようにするため |
 
 ---
 
@@ -107,7 +109,7 @@ TSDoc は呼び出し側のエディタのホバーと補完に表示される�
 
 ```plain text
 3dwebsite/
-├── app/                      # Next.js App Router（layout / page / globals.css）
+├── app/                      # Next.js App Router（layout / page / error / globals.css）
 ├── components/
 │   ├── PortfolioExperience.tsx   # クライアント側のルート。単一 <Canvas> と UI を束ねる
 │   ├── SceneErrorBoundary.tsx    # <Canvas> の中のエラーを受け止めて知らせる
