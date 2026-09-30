@@ -20,10 +20,14 @@ import {
   advanceBrightness,
   advanceLift,
   advanceSpin,
+  advanceViewShift,
   applyStoneBrightness,
+  applyViewShift,
   disposeRefractionBvh,
   exposureFor,
+  fitFov,
   focusPose,
+  focusViewShift,
   geometryBounds,
   JEWELS_ENV_URL,
   JEWELS_GLB_URL,
@@ -115,7 +119,7 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
     // 形が変わったときだけ求め直す
     [geometries],
   );
-  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さない）
+  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さず、描く範囲のずらしもすぐに切り替える）
   const reducedMotion = usePrefersReducedMotion();
 
   // 表示している間だけ、写真向けの色の出し方（トーンマッピングと sRGB 出力）に切り替える
@@ -126,13 +130,26 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
   const [controls, setControls] = useState<CameraControlsImpl | null>(null);
   // 選んだ石へカメラを動かす（石を選んでいなければ全体へ戻す）
   useCameraFlight(controls, selected, placements, reducedMotion);
+  // fov: 縦の画角。縦長の画面（スマホ）では広げて、文字盤の左右の石が切れないようにする（lib/scenes/jewels.ts の fitFov）。
+  // 画面の大きさそのもの（size）ではなく、求めた数値だけを購読する。size を購読すると、窓の大きさやスマホのアドレスバーが
+  // 変わるたびにシーン全体が描き直されるが、数値なら値が変わったときだけで済む。
+  // 効くのはおもにパソコン向けの配置の横長の画面（画角はいつも 40°、ずらす量はいつも 0）。スマホ向けの配置では、縦長なら画角が、シートが開いていればずらす量が
+  // 画面の大きさに応じて変わるので、アドレスバーの伸び縮みでは描き直される
+  const fov = useThree((state) => fitFov(state.size.width / state.size.height));
+  // viewShift: スマホ向けの配置（lib/scene.ts の isCompactLayout。横持ちも含む）で詳細のシートが開いている間、石がシートに隠れないよう描く範囲を上へずらす量（px）。同じ理由で数値だけを購読する
+  const viewShift = useThree((state) =>
+    focusViewShift(state.size.width, state.size.height, selected !== null),
+  );
+  // スマホ向けの配置で詳細のシートが開いている間は、石がシートに隠れないよう描く範囲を上へずらす
+  useViewShift(viewShift, reducedMotion);
 
   return (
     <>
       {/* このシーン専用のカメラ。単位は mm なので、近くの切り取り距離を小さくする。 */}
       <PerspectiveCamera
         makeDefault
-        fov={40}
+        // 縦の画角（上の fov）
+        fov={fov}
         near={0.5}
         far={2000}
         position={OVERVIEW_POSE.position}
@@ -147,7 +164,7 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
         draggingSmoothTime={0.12}
         // 寄れる距離の下限（mm）。石に近づきすぎて中に入らないようにする
         minDistance={10}
-        // 離れられる距離の上限（mm）。全体を見るカメラ（約 112 mm）より少し引ける程度。大きくすると、石が小さな点になるまで離れられる
+        // 離れられる距離の上限（mm）。全体を見るカメラ（注視点から約 108 mm）の約 1.7 倍まで引ける。大きくすると、石が小さな点になるまで離れられる
         maxDistance={180}
         // 真上から見下ろしすぎない（真上だと切子面が平たく見える）
         minPolarAngle={0.2}
@@ -199,6 +216,38 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
       ))}
     </>
   );
+}
+
+// useViewShift: カメラの描く範囲を上下にずらすフック（レンズを上下にずらす「レンズシフト」と同じ効果）。
+// カメラの向きは変えずに、写る範囲だけを動かすので、石を回す操作（camera-controls）とぶつからない。
+// ずらす量はカメラの移動と同じくらいの速さで少しずつ目標へ近づける（reducedMotion が true なら、その場で切り替える）。
+// 実際にカメラへ反映する判定（変わっていなければ何もしない、0 なら解く）は lib/scenes/jewels.ts の applyViewShift
+function useViewShift(target: number, reducedMotion: boolean): void {
+  // current: 今のずらす量（px）。フレーム間で持ち越す（毎フレーム変わるので state にしない）
+  const current = useRef(0);
+  // camera: 今の既定のカメラ
+  const camera = useThree((state) => state.camera);
+  // 既定のカメラが替わるとき（シーンを開いた直後に、R3F の既定のカメラからこのシーンのカメラへ替わるときと、
+  // シーンを離れるとき）に、前のカメラのずらしを解き、次のカメラでは 0 から始め直す。
+  // 石を選んだままタブを戻ると、ずらしも 0 から目標へ約 0.8 秒かけて動く（カメラの移動と同時なので目立たない）
+  useEffect(() => {
+    // 後始末: ずらしを解き、今の量を 0 に戻す
+    return () => {
+      // PerspectiveCamera に型を絞ってから呼ぶ（このシーンは遠近カメラだけを使う）
+      if (camera instanceof THREE.PerspectiveCamera) applyViewShift(camera, 0, 0, 0);
+      // 今のずらす量を 0 に戻す（性能のため ref を直接書き換える）
+      current.current = 0;
+    };
+  }, [camera]);
+  // 毎フレーム、ずらす量を目標へ近づけ、変わったときだけカメラに反映する
+  useFrame((state, delta) => {
+    // PerspectiveCamera に型を絞る（このシーンは遠近カメラだけを使う）
+    if (!(state.camera instanceof THREE.PerspectiveCamera)) return;
+    // 次のずらす量（動きを減らす設定なら、すぐに目標へ）。性能のため ref を直接書き換える
+    current.current = reducedMotion ? target : advanceViewShift(current.current, target, delta);
+    // カメラに反映する（量も画面の大きさも前と同じなら、何もしない）
+    applyViewShift(state.camera, current.current, state.size.width, state.size.height);
+  });
 }
 
 // useStudioLook: 表示している間だけ、レンダラーを写真向けの色の出し方にするフック。

@@ -14,7 +14,7 @@ interface JewelDetailProps {
   ref?: Ref<HTMLElement>;
 }
 
-// JewelDetail: 月を選んだときに右側へ出す詳細パネル。Cycles の連番で描いた写真（回せる）と、説明・特徴を並べる
+// JewelDetail: 月を選んだときに右側（スマホ向けの配置では画面の下）へ出す詳細パネル。Cycles の連番で描いた写真（回せる）と、説明・特徴を並べる
 export default function JewelDetail({ stone, onClose, ref }: JewelDetailProps) {
   // accentStyle: この石の色を CSS 変数 --accent へ流し込む（見出しの点やキーボードの枠の色に使う）
   const accentStyle = { "--accent": stone.uiColor } as CSSProperties;
@@ -22,17 +22,26 @@ export default function JewelDetail({ stone, onClose, ref }: JewelDetailProps) {
   const specs = birthstoneSpecs(stone);
 
   return (
-    // panel: 半透明のガラス風パネル。画面の高さに収まらないときは中だけスクロールする
+    // panel: 半透明のガラス風パネル。画面の高さに収まらないときは中だけスクロールする。
+    // スマホ向けの配置: 幅いっぱい・高さは最大で画面の 45%（45dvh）のシート。中身が短ければそれより低い。上の空いたところに 3D の石が見える。
+    // scroll-pt-14: スマホ向けの配置では、キーボードで中のボタンへ移ってスクロールしたときに、上に固定した見出し（約 54px）の下に隠れないよう 56px あける。
+    // 高さ 480px 以下の画面（short:）では見出しの上の余白を詰めて約 44px になるので、48px（scroll-pt-12）にする（56px のままだと、低いシートでは見える場所のほとんどが余白になる）。
+    // パソコン向けの配置（roomy:）: 幅 320px
     <section
       ref={ref}
       aria-label={`${stone.nameJa}の詳細`}
       style={accentStyle}
-      className="pointer-events-auto flex min-h-0 w-80 flex-col overflow-y-auto rounded-[18px] border border-white/15 bg-[rgba(9,10,16,0.6)] px-5 pt-4.5 pb-5 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
+      className="pointer-events-auto flex max-h-[45dvh] roomy:max-h-none min-h-0 roomy:w-80 w-full compact:scroll-pt-14 short:scroll-pt-12 flex-col overflow-y-auto rounded-[18px] border border-white/15 bg-[rgba(9,10,16,0.6)] px-5 pt-0 roomy:pt-4.5 pb-5 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
     >
-      {/* p-head: パネル見出し（写真の描き方）と閉じるボタン */}
-      <div className="mb-2 flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.2em] opacity-85">
-        {/* 見出し。点の色は石の色。英語として読み上げさせる */}
-        <span lang="en" className="flex items-center gap-2">
+      {/* p-head: パネル見出し（写真の描き方）と閉じるボタン。
+          スマホ向けの配置（compact:）では sticky top-0 で、中身をスクロールしても上の端に残し、× ボタンをいつでも押せるようにする（スマホには Esc キーがないため）。
+          パネルの上の余白（18px）はスマホ向けの配置ではパネルではなくここに持たせ（pt-4.5）、-mx-5 と px-5 で左右の余白まで濃い背景を広げて、下を流れる中身が透けないようにする。
+          （余白をパネルに残すと、固定の位置がその余白の分だけ下がり、上に隙間ができる）
+          高さが 480px（30rem）以下のスマホ（横向きなど）では、上の余白を 8px に詰めて、シートの中身が見える高さを残す。
+          パソコン向けの配置では固定せず、背景も付けない（元の見た目のまま。Esc キーで閉じられる） */}
+      <div className="compact:sticky compact:top-0 compact:z-10 compact:-mx-5 mb-2 flex items-center justify-between compact:bg-[rgb(12,13,20)] compact:px-5 compact:pt-4.5 short:pt-2 compact:pb-2 font-mono text-[11px] uppercase tracking-[0.2em]">
+        {/* 見出し。点の色は石の色。英語として読み上げさせる。少し薄くする（背景は濃いまま） */}
+        <span lang="en" className="flex items-center gap-2 opacity-85">
           {/* 石の色の点（飾りなので読み上げない） */}
           <span aria-hidden="true" className="h-1.75 w-1.75 rounded-full bg-(--accent)" />
           Photo · Cycles

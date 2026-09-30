@@ -55,6 +55,38 @@ export const DEFAULT_PARAMS: SceneParams = {
 // STORAGE_KEY: 最後に開いていたシーンを localStorage に保存するときのキー名。
 export const STORAGE_KEY = "scene-tab";
 
+/**
+ * パソコン向けの配置にする画面の幅の下限（CSS の px）。この幅以上で、しかも高さが `COMPACT_MAX_HEIGHT_PX` より高ければパソコン向けにする。
+ *
+ * app/globals.css の `compact:` / `roomy:`（独自の Tailwind の条件）と同じ値にしておく（48rem = 768px。lib/scene.test.ts が照らし合わせる）。
+ * 画面の部品はその CSS の条件で、3D（誕生石シーンで石を上へずらす量など）は `isCompactLayout` で切り替えるので、食い違うとシートと石が重なる。
+ * ただし CSS は rem なのでブラウザの文字の大きさの設定で動き、3D 側はキャンバスの大きさで比べる。
+ * また CSS の画面の幅はスクロールバーを含み、スマホでは高さがアドレスバーの出し入れで変わる。キャンバスは全画面（<main> いっぱい）なのでほぼ同じ値になるが、
+ * 文字の大きさを既定から変えている人などでは、切り替わる大きさが少しずれることがある。
+ */
+export const ROOMY_MIN_WIDTH_PX = 768;
+
+/**
+ * この高さ（CSS の px）以下の画面は、幅が広くてもスマホ向けの配置にする（30rem = 480px）。
+ * スマホの横持ち（例: 844 × 390）は幅が 768px を超えるが、パソコン向けの横並びでは詳細パネルと操作パネルが縦に入りきらないため。
+ */
+export const COMPACT_MAX_HEIGHT_PX = 480;
+
+/**
+ * スマホ向けの配置（下の段を縦に積み、詳細は下のシート、操作パネルは開閉式）にする画面か。
+ * app/globals.css の `compact:` と同じ条件（幅が `ROOMY_MIN_WIDTH_PX` 未満、または高さが `COMPACT_MAX_HEIGHT_PX` 以下）。
+ *
+ * 幅と高さは有限な正の値を渡す前提（NaN を渡すと、その比べは成り立たず false になり、結果がもう一方の値だけで決まる）。
+ * 呼び出し側で先に確かめる（例: lib/scenes/jewels.ts の `focusViewShift`）。
+ *
+ * @param width - 画面の幅（CSS の px）
+ * @param height - 画面の高さ（CSS の px）
+ */
+export function isCompactLayout(width: number, height: number): boolean {
+  // 幅が狭いか、高さが低ければスマホ向け
+  return width < ROOMY_MIN_WIDTH_PX || height <= COMPACT_MAX_HEIGHT_PX;
+}
+
 // TABS: 画面上部のタブ切り替えボタンの定義(識別子と表示ラベル)。
 export const TABS: { id: SceneTab; label: string }[] = [
   // 太陽

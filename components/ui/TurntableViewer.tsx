@@ -224,8 +224,10 @@ export default function TurntableViewer({ stone }: TurntableViewerProps) {
   return (
     // viewer: 画像と操作ボタンのまとまり
     <div>
-      {/* stage: 画像を描く正方形の枠。読み込み中や失敗の表示を重ねる */}
-      <div className="relative">
+      {/* stage: 画像を描く正方形の枠。読み込み中や失敗の表示を重ねる。
+          スマホ向けの配置では 224px までにして中央に置く（幅いっぱいの正方形だと、高さが最大 45dvh のシートが写真だけで埋まるため）。
+          さらに高さが 480px（30rem）以下のスマホ（横向きなど）では 128px にして、説明や特徴の一覧をシートの中で見えるようにする */}
+      <div className="relative mx-auto max-w-56 roomy:max-w-none short:max-w-32">
         {/* 画像を描く <canvas>。内部の解像度は連番画像と同じにし、表示の大きさは CSS で合わせる */}
         <canvas
           ref={canvas}
@@ -234,8 +236,9 @@ export default function TurntableViewer({ stone }: TurntableViewerProps) {
           // role="img": 読み上げでは「画像」として扱い、aria-label で中身を伝える
           role="img"
           aria-label={`${stone.nameJa}を Cycles（レイトレーシング）で描いた写真。ドラッグで回せます`}
-          // touch-none: タッチのドラッグでページがスクロールしないようにする
-          className="block aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
+          // touch-pan-y: 横のドラッグは写真を回す操作に使い、縦のドラッグはブラウザに任せて、写真の上からでもシートを縦にスクロールできるようにする
+          // （縦にスクロールし始めると pointercancel が届き、endDrag で回す操作を終える）
+          className="block aspect-square w-full cursor-grab touch-pan-y active:cursor-grabbing"
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={endDrag}

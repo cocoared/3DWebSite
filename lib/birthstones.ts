@@ -331,8 +331,9 @@ export function monthShortLabel(month: number): string {
 export type SpecRow = readonly [label: string, value: string];
 
 /**
- * 詳細パネルに並べる特徴の一覧（硬度・成分・屈折率・分散・産地の順）。
+ * 詳細パネルに並べる特徴の一覧（石言葉・硬度・成分・屈折率・分散・産地の順）。
  * パールは透明な石ではなく分散が 0 なので、「分散 0.000」の行は入れない。
+ * 石言葉は見出し（SceneHero）の説明文にもあるが、スマホ向けの配置ではその説明文を見た目から隠すので、ここにも必ず入れる。
  */
 export function birthstoneSpecs(stone: Birthstone): readonly SpecRow[] {
   // 分散の行。分散が 0 のパールでは空にして、行そのものを出さない
@@ -340,6 +341,8 @@ export function birthstoneSpecs(stone: Birthstone): readonly SpecRow[] {
     stone.dispersion > 0 ? [["分散", stone.dispersion.toFixed(3)]] : [];
   // 見出しと値の組を、表示する順に並べる
   return [
+    // 石言葉（日本語の後ろに英語をかっこで添える。例: 強さ（Strength））
+    ["石言葉", `${stone.meaningJa}（${stone.meaning}）`],
     // 硬さ（モース硬度）
     ["硬度", `モース ${stone.hardness}`],
     // 主な成分

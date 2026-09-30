@@ -255,16 +255,16 @@ describe("birthstoneSpecs", () => {
     return birthstoneSpecs(birthstoneById(id)).map(([label]) => label);
   }
 
-  // 透明な石は、硬度・成分・屈折率・分散・産地の順に並ぶ
+  // 透明な石は、石言葉・硬度・成分・屈折率・分散・産地の順に並ぶ
   test("パール以外は分散の行を含み、決まった順に並ぶ", () => {
     // Assert: ダイヤモンドの見出しの並び
-    expect(labelsOf("diamond")).toEqual(["硬度", "成分", "屈折率", "分散", "産地"]);
+    expect(labelsOf("diamond")).toEqual(["石言葉", "硬度", "成分", "屈折率", "分散", "産地"]);
   });
 
   // パールは透明な石ではなく分散が 0 なので、「分散 0.000」の行は出さない
   test("パールは分散の行を出さない", () => {
     // Assert: 分散の無い並び
-    expect(labelsOf("pearl")).toEqual(["硬度", "成分", "屈折率", "産地"]);
+    expect(labelsOf("pearl")).toEqual(["石言葉", "硬度", "成分", "屈折率", "産地"]);
   });
 
   // 行を出すかどうかは石の名前ではなく分散の値で決める（パール以外でも分散が 0 なら出さない）
@@ -276,6 +276,29 @@ describe("birthstoneSpecs", () => {
     // Assert: 分散の行が無い
     expect(labels).not.toContain("分散");
   });
+
+  // スマホ向けの配置では見出しの説明文（石言葉を含む）を見た目から隠すので、石言葉は詳細パネルの一覧にも必ず出す
+  test("石言葉は、日本語の後ろに英語をかっこで添える", () => {
+    // Arrange: ダイヤモンド
+    const stone = birthstoneById("diamond");
+    // Act: 見出し → 値の表にする
+    const specs = new Map(birthstoneSpecs(stone));
+    // Assert: 「強さ（Strength）」
+    expect(specs.get("石言葉")).toBe("強さ（Strength）");
+  });
+
+  // 12 石すべてで、石言葉が欠けずに「日本語（英語）」の形になる（データの欠けや空の文字も拾う）
+  test.each(BIRTHSTONES.map((stone) => [stone.id, stone] as const))(
+    "%s の石言葉の行は「日本語（英語）」",
+    (_id, stone) => {
+      // Act: 見出し → 値の表にする
+      const meaning = new Map(birthstoneSpecs(stone)).get("石言葉");
+      // Assert: 日本語と英語がどちらも 1 文字以上ある
+      expect(meaning).toMatch(/^.+（.+）$/);
+      // Assert: データの値そのもの
+      expect(meaning).toBe(`${stone.meaningJa}（${stone.meaning}）`);
+    },
+  );
 
   // 値の書き方（桁数やつなぎ方）
   test("硬度にはモースを付け、屈折率は小数 2 桁、分散は小数 3 桁、産地は中黒でつなぐ", () => {
