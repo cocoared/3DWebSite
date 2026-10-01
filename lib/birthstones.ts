@@ -4,7 +4,7 @@
 
 import raw from "./birthstones.json";
 
-/** 誕生石の id。1 月〜12 月の順に並べた一覧。glTF（jewels.glb）のノード名や、連番画像のフォルダ名にもなる。 */
+/** 誕生石の id。1 月〜12 月の順に並べた一覧。glTF（jewels.glb）のノード名にもなる。 */
 export const BIRTHSTONE_IDS = [
   // 1 月: ガーネット
   "garnet",
@@ -44,7 +44,7 @@ const JEWEL_CUTS: readonly JewelCut[] = ["round", "oval", "pear", "sphere"];
 /**
  * 誕生石 1 つぶんのデータ。
  *
- * どの項目も読み取り専用。`BIRTHSTONES` の同じオブジェクトをアプリ全体（3D・月のボタン・詳細パネル）で共有するので、
+ * どの項目も読み取り専用。`BIRTHSTONES` の同じオブジェクトをアプリ全体（3D・月のラベル・解説カード）で共有するので、
  * 受け取った側がうっかり書き換えて、ほかの場所の表示まで変えてしまわないようにする。
  */
 export interface Birthstone {
@@ -66,7 +66,7 @@ export interface Birthstone {
   readonly sizeMm: number;
   /** 描画用の本体の色（`#rrggbb`）。Cycles の吸収の色と、リアルタイムの屈折の色の両方に使う。 */
   readonly color: string;
-  /** 暗い背景の上の UI（月のボタンの点、詳細パネルの飾り）に使う、明るめの色（`#rrggbb`）。 */
+  /** 暗い背景の上の UI（月のラベルの点、解説カードの飾り）に使う、明るめの色（`#rrggbb`）。 */
   readonly uiColor: string;
   /** 屈折率（IOR）。光が石に入るときに曲がる強さ。空気は 1、ダイヤは 2.417。 */
   readonly ior: number;
@@ -78,7 +78,7 @@ export interface Birthstone {
   readonly composition: string;
   /** 主な産地（表示用。1 つ以上）。 */
   readonly origins: readonly string[];
-  /** 詳細パネルに出す説明文（日本語）。 */
+  /** 解説カードに出す説明文（日本語）。 */
   readonly description: string;
 }
 
@@ -176,7 +176,7 @@ function readStone(entry: unknown, index: number): Birthstone {
   // id を読む
   const id = readText(entry, index, "id");
   // 並び順の id と違えば誤り。知らない id・重複・入れ替わりのどれもここで見つかる
-  // （入れ替わったままだと、1 月のデータが別の石の .glb のノードや連番画像と結び付いてしまう）
+  // （入れ替わったままだと、1 月のデータが別の石の .glb のノードと結び付いてしまう）
   if (id !== expectedId)
     fail(index, "id", `${index + 1} 件目は「${expectedId}」のはずです（${id}）`);
   // カットを読む
@@ -250,7 +250,7 @@ export function parseBirthstones(data: unknown): Birthstone[] {
 /** 12 か月の誕生石（1 月〜12 月の順）。読み込み時に `parseBirthstones` で検証済み。 */
 export const BIRTHSTONES: readonly Birthstone[] = parseBirthstones(raw);
 
-/** 英語の月名（1 月 = 添字 0）。見出しや月のボタンに使う。 */
+/** 英語の月名（1 月 = 添字 0）。見出しや月のラベルに使う。 */
 export const MONTH_NAMES = [
   // 1 月
   "January",
@@ -317,7 +317,7 @@ export function monthName(month: number): string {
 }
 
 /**
- * 月のボタンに出す短い月名（英語の頭 3 文字の大文字。例: `"JAN"`）。
+ * 月のラベルや前後の月のボタンに出す短い月名（英語の頭 3 文字の大文字。例: `"JAN"`）。
  *
  * @param month - 1〜12 の月
  * @throws 範囲外や整数でない月のとき（RangeError）
@@ -327,12 +327,13 @@ export function monthShortLabel(month: number): string {
   return monthName(month).slice(0, 3).toUpperCase();
 }
 
-/** 詳細パネルの特徴の一覧の 1 行（見出し, 値）。 */
+/** 解説カードの特徴の表の 1 行（見出し, 値）。 */
 export type SpecRow = readonly [label: string, value: string];
 
 /**
- * 詳細パネルに並べる特徴の一覧（硬度・成分・屈折率・分散・産地の順）。
+ * 解説カードの「特徴」の表に並べる行（硬度・成分・屈折率・分散・産地の順）。
  * パールは透明な石ではなく分散が 0 なので、「分散 0.000」の行は入れない。
+ * 石言葉はカードの上（`jewelHero` の文）に必ず出るので、ここには入れない。
  */
 export function birthstoneSpecs(stone: Birthstone): readonly SpecRow[] {
   // 分散の行。分散が 0 のパールでは空にして、行そのものを出さない

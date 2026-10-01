@@ -172,7 +172,7 @@ describe("parseBirthstones", () => {
   });
 
   // 重複が無くても、id の並びが月の順（BIRTHSTONE_IDS）と違えば受け付けない。
-  // id だけが入れ替わると、1 月のデータがアメジストの .glb のノードや連番画像と結び付いてしまうため
+  // id だけが入れ替わると、1 月のデータがアメジストの .glb のノードと結び付いてしまうため
   test("id が入れ替わっている（重複は無い）とエラーを投げる", () => {
     // Arrange: 1 件目と 2 件目の id だけを入れ替える（月や色などはそのまま）
     const data = withChange(0, "id", "amethyst");
@@ -247,7 +247,7 @@ describe("誕生石の検索", () => {
   });
 });
 
-// birthstoneSpecs: 詳細パネルの特徴の一覧（見出しと値の組）
+// birthstoneSpecs: 解説カードの特徴の表（見出しと値の組）
 describe("birthstoneSpecs", () => {
   // labelsOf: 一覧から見出しだけを取り出す
   function labelsOf(id: BirthstoneId): string[] {
@@ -275,6 +275,17 @@ describe("birthstoneSpecs", () => {
     const labels = birthstoneSpecs(stone).map(([label]) => label);
     // Assert: 分散の行が無い
     expect(labels).not.toContain("分散");
+  });
+
+  // 石言葉は解説カードの上（jewelHero の文）に必ず出るので、特徴の表には入れない（同じことを 2 回見せない）
+  test("特徴の表に石言葉の行は入れない", () => {
+    // Act / Assert: 12 石のどれにも無い
+    for (const stone of BIRTHSTONES) {
+      // 見出しだけを取り出す
+      const labels = birthstoneSpecs(stone).map(([label]) => label);
+      // 石言葉が無い
+      expect(labels).not.toContain("石言葉");
+    }
   });
 
   // 値の書き方（桁数やつなぎ方）

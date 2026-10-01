@@ -1,19 +1,19 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import SceneErrorBoundary from "@/components/SceneErrorBoundary";
 import JewelsScene from "@/components/scenes/JewelsScene";
 import OceanScene from "@/components/scenes/OceanScene";
 import SunScene from "@/components/scenes/SunScene";
 import ControlPanel from "@/components/ui/ControlPanel";
-import JewelDetail from "@/components/ui/JewelDetail";
+import JewelCard from "@/components/ui/JewelCard";
 import LoadingIndicator from "@/components/ui/LoadingIndicator";
-import MonthPicker from "@/components/ui/MonthPicker";
+import MonthLabels from "@/components/ui/MonthLabels";
 import SceneHero from "@/components/ui/SceneHero";
 import SceneNav from "@/components/ui/SceneNav";
 import { type BirthstoneId, birthstoneById } from "@/lib/birthstones";
-import { returnFocusToMonth } from "@/lib/focus";
+import { createMonthLabelHandles, endFocusPromise, requestLabelFocus } from "@/lib/monthLabels";
 import {
   DEFAULT_PARAMS,
   HERO,
@@ -22,7 +22,7 @@ import {
   type SceneTab,
   STORAGE_KEY,
 } from "@/lib/scene";
-import { jewelHero, overviewHero, toggleStone } from "@/lib/scenes/jewels";
+import { jewelHero, nextOrbitRequest, type OrbitRequest, overviewHero } from "@/lib/scenes/jewels";
 
 // readSavedTab: 前回開いていたシーンを localStorage から復元する(なければ太陽)。
 // このコンポーネントは page 側で ssr:false 指定のためクライアントでのみ実行され、localStorage を安全に読める。
@@ -43,20 +43,35 @@ export default function PortfolioExperience() {
   const [tab, setTab] = useState<SceneTab>(readSavedTab);
   // params: 3シーンぶんの操作パラメータ。スライダーで更新される。
   const [params, setParams] = useState<SceneParams>(DEFAULT_PARAMS);
-  // jewel: 誕生石シーンで選んでいる石（null = 全体の文字盤を見ている）。3D・月のボタン・見出し・詳細パネルが共有する
+  // jewel: 誕生石シーンで選んでいる石（null = 全体の文字盤を見ている）。3D・月のラベル・見出し・解説カードが共有する
   const [jewel, setJewel] = useState<BirthstoneId | null>(null);
   // isReturnFromStone: 同じタブのまま石の選択を外して、文字盤の一覧に戻ったところか。
   // 読み上げを「シーンを表示しています」ではなく「一覧に戻りました」にするために使う（lib/scenes/jewels.ts の overviewHero）
   const [isReturnFromStone, setIsReturnFromStone] = useState(false);
-  // monthPicker: 月のボタン列の <nav>（詳細パネルを閉じたときに、フォーカスを戻す月のボタンを探すため）
-  const monthPicker = useRef<HTMLElement>(null);
-  // detailPanel: 詳細パネルの <section>（閉じるときに、フォーカスがパネルの中にあるかを調べるため）
-  const detailPanel = useRef<HTMLElement>(null);
+  // labelHandles: 月のラベルの DOM 要素と、閉じたあとにフォーカスを返す月の入れ物（lib/monthLabels.ts）。
+  // MonthLabels が要素を入れ、JewelsScene が毎フレーム位置を書き込む。useState の初期化関数で 1 回だけ作り、同じものを使い続ける
+  const [labelHandles] = useState(createMonthLabelHandles);
+  // jewelCard: 解説カードの <section>（閉じるときに、フォーカスがカードの中にあるかを調べるため）
+  const jewelCard = useRef<HTMLElement>(null);
+  // heroHeading: 左下の見出し（SceneHero の h1）。解説カードを閉じたあと、月のラベルが画面に入るまでフォーカスを預ける
+  const heroHeading = useRef<HTMLHeadingElement>(null);
+  // shouldHoldFocus: 次にカードが消えたときに、見出しへフォーカスを預けるか（閉じるときに、ラベルへ返す約束をしたら true）
+  const shouldHoldFocus = useRef(false);
+  // isJewelsReady: 誕生石シーンの 3D が読み込まれて表示できているか（JewelsScene の onReady が知らせる）。
+  // true の間だけ月のラベルを描く（読み込み中やエラーのときに、中身の無い「誕生月を選ぶ」ナビを読み上げさせないため）
+  const [isJewelsReady, setIsJewelsReady] = useState(false);
+  // orbitRequest: 解説カードの回すボタンからの、視点を回り込ませる指示（押すたびに番号が増える。JewelsScene が 1 回ぶん回す）。
+  // 番号は戻さない（タブを替えても消さない）。JewelsScene は開いたときの番号を回し済みとして始めるので、古い指示で回ることはない
+  const [orbitRequest, setOrbitRequest] = useState<OrbitRequest | null>(null);
 
   // selectTab: タブを切り替え、選択を localStorage に保存する。
   const selectTab = (next: SceneTab) => {
     // 表示シーンを更新
     setTab(next);
+    // 石の選択を外す（誕生石シーンに戻ってきたときに、解説カードが出てフォーカスがタブから勝手に動かないように）
+    setJewel(null);
+    // 月のラベルへフォーカスを返す約束と預け先を消す（別のシーンへ移ったあとで、戻ってきたときにフォーカスを奪わないように）。入れ物は state ではないので直接書き換える
+    endFocusPromise(labelHandles);
     // タブを切り替えてきたので、誕生石シーンに来たときはシーンの読み上げに戻す
     setIsReturnFromStone(false);
     try {
@@ -78,33 +93,53 @@ export default function PortfolioExperience() {
     );
   };
 
-  // toggleJewel: 月のボタンで石を選ぶ。選んでいる月をもう一度押したら選択を外す（決め方は lib/scenes/jewels.ts の toggleStone）。
-  // 3D の石のクリックは、切り替えずにいつもその石を選ぶ（JewelsScene の onSelect に setJewel をそのまま渡している）
-  const toggleJewel = (id: BirthstoneId) => {
-    // 今の選択から、次の選択を決める（読み上げの切り替えにも使うので、先に計算しておく）
-    const next = toggleStone(jewel, id);
-    // 選択を更新する
-    setJewel(next);
-    // 選択を外したときだけ、「一覧に戻りました」と読み上げる
-    setIsReturnFromStone(next === null);
-  };
+  // selectJewel: 石を選ぶ（月のラベル・3D の石・解説カードの前後の月のボタンから）。
+  // 月のラベルは石を選んでいる間は描かないので、押し直して選択を外す動きは無い（外すのはカードの × と Esc）。
+  // 入れ物（再レンダーで変わらない）と state の更新関数しか使わないので、最初に作った関数を使い回す（memo した MonthLabels を描き直さないため）
+  const selectJewel = useCallback(
+    (id: BirthstoneId) => {
+      // 選択を更新する
+      setJewel(id);
+      // 石を選んだので、読み上げは石の文にする
+      setIsReturnFromStone(false);
+      // 前の約束と預け先が残っていれば消す（別の石を選んだあとで、古い月のラベルにフォーカスが飛ばないように）。入れ物は state ではないので直接書き換える
+      endFocusPromise(labelHandles);
+    },
+    [labelHandles],
+  );
 
-  // closeJewel: 詳細パネルを閉じて全体の文字盤に戻る（× ボタンと Esc キー）。
-  // ref と state の更新関数（どれも再レンダーで変わらない）しか使わないので、最初に作った関数を使い回す
+  // rotateView: 解説カードの回すボタンで、視点を石のまわりに回り込ませる（-1 = 左へ、1 = 右へ）。押すたびに番号を 1 増やした新しい指示を作る
+  const rotateView = useCallback((direction: -1 | 1) => {
+    // 前の指示の番号に 1 を足す（同じ向きを続けて押しても、別の指示として届くように。lib/scenes/jewels.ts の nextOrbitRequest）
+    setOrbitRequest((previous) => nextOrbitRequest(previous, direction));
+  }, []);
+
+  // closeJewel: 解説カードを閉じて文字盤の一覧に戻る（× ボタンと Esc キー）。
+  // 閉じる石の月を使うので、選んでいる石が替わったら作り直す
   const closeJewel = useCallback(() => {
-    // パネルの中にフォーカスがあれば、パネルが消える前に、選んでいた月のボタンへ移す（lib/focus.ts）
-    returnFocusToMonth(detailPanel.current, monthPicker.current, document.activeElement);
+    // 閉じる石が無ければ何もしない
+    if (!jewel) return;
+    // カードの中にフォーカスがあれば、閉じたあと、その月のラベルが見えたときにフォーカスを返す約束をする（lib/monthLabels.ts）。
+    // 約束したら、ラベルが見えるまでの間は見出しへフォーカスを預ける（下の useLayoutEffect）
+    shouldHoldFocus.current = requestLabelFocus(
+      jewelCard.current,
+      document.activeElement,
+      labelHandles,
+      birthstoneById(jewel).month,
+      // 今の時刻（約束の期限を決める。カメラが一覧へ戻る間は待つ）
+      performance.now(),
+    );
     // 選択を外す
     setJewel(null);
     // 同じタブのまま一覧に戻ったので、「一覧に戻りました」と読み上げる
     setIsReturnFromStone(true);
-  }, []);
+  }, [jewel, labelHandles]);
 
   // 誕生石を選んでいる間は、Esc キーで全体の文字盤に戻れるようにする
   useEffect(() => {
     // 誕生石シーンで石を選んでいるときだけ受け付ける
     if (tab !== "jewel" || !jewel) return;
-    // onKeyDown: Esc キーなら詳細パネルを閉じる
+    // onKeyDown: Esc キーなら解説カードを閉じる
     const onKeyDown = (event: KeyboardEvent) => {
       // Esc キーのときだけ
       if (event.key === "Escape") closeJewel();
@@ -115,17 +150,39 @@ export default function PortfolioExperience() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [tab, jewel, closeJewel]);
 
-  // detail: 詳細パネルに出す石（誕生石シーンで石を選んでいるときだけ）
-  const detail = tab === "jewel" && jewel ? birthstoneById(jewel) : null;
+  // cardStone: 解説カードに出す石（誕生石シーンで石を選んでいるときだけ）
+  const cardStone = tab === "jewel" && jewel ? birthstoneById(jewel) : null;
+  // 解説カードを閉じてカードが消えたら、月のラベルが画面に入るまで、一覧の見出しへフォーカスを預ける。
+  // カードの中にあったフォーカスはカードと一緒に消えて <body> に落ち、キーボードや読み上げで今いる場所が分からなくなるため（WCAG 2.4.3）。
+  // 閉じた直後はカメラが石に寄ったままで、ラベルが画面の外にあり、すぐにはフォーカスできない。ラベルが見えたら JewelsScene が見出しからラベルへ移す。
+  // useLayoutEffect: 画面を描く前に移す（フォーカスの無い瞬間を見せない。3D の次のフレームより先に動くので、先にラベルへ移ったフォーカスを見出しが奪うこともない）
+  useLayoutEffect(() => {
+    // カードが出ている間、または閉じるときに約束しなかった（フォーカスがカードの外にあった）ときは何もしない
+    if (cardStone || !shouldHoldFocus.current) return;
+    // 1 回だけにする（次に閉じるときまで）
+    shouldHoldFocus.current = false;
+    // heading: 一覧の見出し
+    const heading = heroHeading.current;
+    // active: 今フォーカスのある要素
+    const active = document.activeElement;
+    // 見出しが無い、またはフォーカスがもう別の場所にある（<body> に落ちていない）なら、動かさない
+    if (!heading || (active && active !== document.body)) return;
+    // 預け先を入れ物に知らせる（ここにある間は、約束を待ち続ける。lib/monthLabels.ts の dropFocusPromiseIfMoved）。入れ物は state ではないので直接書き換える
+    labelHandles.focusHolder = heading;
+    // 画面を動かさずに見出しへ移す
+    heading.focus({ preventScroll: true });
+  }, [cardStone, labelHandles]);
+
   // overview: 石を選んでいないときの見出し。誕生石シーンでは、選択を外して戻ったときだけ読み上げの文が変わる
   const overview = tab === "jewel" ? overviewHero(isReturnFromStone) : HERO[tab];
   // hero: 左下の見出しの文言と読み上げの知らせ。石を選んでいればその石の見出し、そうでなければ上の見出し
-  const hero = detail ? jewelHero(detail) : overview;
+  const hero = cardStone ? jewelHero(cardStone) : overview;
 
   return (
     // main: ページの本文（ランドマーク）。読み上げソフトで「本文へ移動」したときの行き先になる。
-    // 全画面の背景コンテナを兼ね、3D キャンバスと UI を絶対配置で重ねる土台にする
-    <main className="relative h-screen w-screen overflow-hidden bg-ink">
+    // 全画面の背景コンテナを兼ね、3D キャンバスと UI を絶対配置で重ねる土台にする。
+    // h-dvh: スマホでアドレスバーが出ていても、実際に見えている高さに合わせる（h-screen だと下端の UI が隠れる）
+    <main className="relative h-dvh w-full overflow-hidden bg-ink">
       {/* キャンバスの中で起きたエラー（宝石の .glb が読めないなど）を捕まえて知らせる。タブを替えたら描き直す。 */}
       <SceneErrorBoundary resetKey={tab}>
         {/* 単一の 3D キャンバス。色味を元デザインに合わせて linear(色変換なし)+flat(トーンマップなし)にする。 */}
@@ -145,7 +202,14 @@ export default function PortfolioExperience() {
           {tab === "jewel" && (
             <Suspense fallback={null}>
               {/* 誕生石シーン */}
-              <JewelsScene params={params.jewel} selected={jewel} onSelect={setJewel} />
+              <JewelsScene
+                params={params.jewel}
+                selected={jewel}
+                onSelect={selectJewel}
+                labels={labelHandles}
+                onReady={setIsJewelsReady}
+                orbitRequest={orbitRequest}
+              />
             </Suspense>
           )}
         </Canvas>
@@ -154,37 +218,69 @@ export default function PortfolioExperience() {
       {/* vignette: 画面周辺を暗く落として中央へ視線を集める、操作を透過するオーバーレイ。 */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(125%_95%_at_50%_42%,transparent_55%,rgba(0,0,0,0.36)_100%)]" />
 
+      {/* scrim: スマホ向けの配置だけ、下から暗くなるグラデーションを敷き、見出しの白い文字を読みやすくする。
+          スマホでは太陽などの明るい 3D が見出しの真後ろに来るため（パソコン向けの配置では見出しが左下の暗い隅にあるので敷かない）。操作は透過する。
+          太陽・浜辺（下の三項演算子の後ろの値）: 画面の全体に、下の端で黒 80%、真ん中で 60%、上の端で透明。
+          320〜390px 幅で測って、いちばん小さい文字でも 5.7:1 以上（WCAG AA は 4.5:1）になる濃さ。
+          誕生石（三項演算子の前側の値）: 背景が暗いので、画面の下半分だけに弱く敷く（全体に敷くと、文字盤の石の色まで暗く沈んでしまうため）。
+          狭い画面でタイトルの後ろに白いパールが来ても読めるようにする */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 bottom-0 roomy:hidden bg-linear-to-t to-transparent ${
+          tab === "jewel" ? "h-1/2 from-black/70 via-black/40" : "h-full from-black/80 via-black/60"
+        }`}
+      />
+
       {/* 3D の読み込み中だけ、中央に進み具合を出す。 */}
       <LoadingIndicator />
 
-      {/* ui: キャンバスの上に重なる操作 UI。上にナビ、下に見出しと操作パネルを配置する。 */}
-      <div className="pointer-events-none absolute inset-0 flex flex-col px-11 py-8.5 text-paper">
-        {/* top: 上部ナビ(シーン切り替え)と、誕生石シーンの月のボタン列。 */}
+      {/* ui: キャンバスの上に重なる操作 UI。上にナビ、下に見出し（または解説カード）と操作パネルを配置する。
+          余白はスマホ向けの配置では狭く（16px）、パソコン向けの配置（roomy:）では広くとる。
+          高さ 256px 未満の画面（tiny:。400% 拡大など）では、中身が入りきらないので、この層ごとスクロールする。
+          isolate: この層を 1 つの重なりの単位にし、月のラベル（-z-10）を層の中の一番下に描く（キャンバスよりは上、ナビ・見出し・カード・操作パネルよりは下） */}
+      <div className="pointer-events-none absolute inset-0 isolate flex flex-col tiny:overflow-y-auto px-4 roomy:px-11 py-4 roomy:py-8.5 text-paper">
+        {/* top: 上部ナビ(シーン切り替え) */}
         <div>
           {/* シーン切り替えのタブ */}
           <SceneNav active={tab} onSelect={selectTab} />
-          {/* 誕生石シーンのときだけ、月のボタン列を出す */}
-          {tab === "jewel" && (
-            <MonthPicker ref={monthPicker} selected={jewel} onSelect={toggleJewel} />
-          )}
         </div>
-        {/* bottom: 残りの高さを使い、左下に見出し、右側に詳細パネルと操作パネルを縦に積む。 */}
-        <div className="flex min-h-0 flex-1 items-end justify-between gap-10 pt-6">
-          {/* 左下: 現在シーン（または選んだ誕生石）の見出し。 */}
-          <SceneHero content={hero} />
-          {/* 右: 詳細パネル（石を選んだときだけ）の下に操作パネル。高さが足りないときは詳細パネルの中がスクロールする。 */}
-          <div className="flex max-h-full min-h-0 flex-col items-end gap-4">
-            {/* 選んだ誕生石の詳細（閉じると全体に戻る） */}
-            {detail && <JewelDetail ref={detailPanel} stone={detail} onClose={closeJewel} />}
-            {/* 現在シーンの操作パネル */}
+        {/* 誕生石シーンの 3D が表示できていて、石を選んでいない間だけ、文字盤の石のそばに月のラベルを浮かべる（位置は JewelsScene が毎フレーム書き込む）。
+            石を選んでいる間はラベルが全部隠れるので、描かない（中身の無い「誕生月を選ぶ」ナビを読み上げさせないため）。閉じたあとにフォーカスを返す約束は入れ物に残るので、描き直したラベルに返る。
+            ナビの直後に置き、キーボードの移動順を「タブ → 月 → 見出し・カード → 操作パネル」にする */}
+        {tab === "jewel" && isJewelsReady && !cardStone && (
+          <MonthLabels handles={labelHandles} onSelect={selectJewel} />
+        )}
+        {/* bottom: 残りの高さを使う下の段。
+            パソコン向けの配置（roomy:）: 左下に見出し（または解説カード）、右下に操作パネル。
+            スマホ向けの配置: 見出し（または解説カードのシート）→ 操作パネルの開閉ボタンを縦に並べ、下の端にそろえる（横に並べると、縦持ちでは幅が、横持ちでは高さが足りないため）。
+            高さ 256px 未満の画面（tiny:）では縮めずに中身の高さのままにし、UI の層ごとスクロールさせる */}
+        <div className="flex min-h-0 flex-1 tiny:flex-none roomy:flex-row flex-col roomy:items-end justify-end roomy:justify-between gap-3 roomy:gap-10 pt-3 roomy:pt-6">
+          {/* 左下: 石を選んでいれば解説カード、そうでなければ現在シーンの見出し */}
+          {cardStone ? (
+            <JewelCard
+              ref={jewelCard}
+              stone={cardStone}
+              onSelect={selectJewel}
+              onClose={closeJewel}
+              onRotate={rotateView}
+            />
+          ) : (
+            <SceneHero content={hero} headingRef={heroHeading} />
+          )}
+          {/* 右下（スマホ向けの配置では下）: 操作パネル。スマホ向けの配置では幅いっぱいに広げ（items-stretch）、パソコン向けの配置では右に寄せる */}
+          <div className="flex roomy:max-h-full min-h-0 flex-col roomy:items-end items-stretch">
+            {/* 現在シーンの操作パネル。key={tab}: タブを替えたら作り直し、スマホ向けの配置で開いていたスライダーを閉じた状態から始める
+                （開いたまま別のシーンへ移ると、次のシーンの 3D をいきなり覆ってしまうため）。
+                タブを替えるときはフォーカスがタブのボタンにあるので、作り直してもフォーカスは失われない。
+                石を選んだときには作り直さない（スライダーにフォーカスがあるまま Esc でカードを閉じると、フォーカスが消えてしまうため） */}
             <ControlPanel
+              key={tab}
               tab={tab}
               values={params[tab] as unknown as Record<string, number>}
               onChange={setParam}
             />
           </div>
         </div>
-        {/* 読み上げ専用の知らせ（画面には出さない）。いつも置いておき、タブを切り替えたとき・石を選んだとき・選択を外したときに、
+        {/* 読み上げ専用の知らせ（画面には出さない）。いつも置いておき、タブを切り替えたとき・石を選んだとき（前後の月へ移ったときも）・選択を外したときに、
             中の文（例: 浜辺のシーンを表示しています。／文字盤の一覧に戻りました。）が替わって読み上げられる。
             ページを開いた直後の文は読み上げられない */}
         <p role="status" className="sr-only">

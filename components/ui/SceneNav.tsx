@@ -14,7 +14,7 @@ export default function SceneNav({ active, onSelect }: SceneNavProps) {
     // header: ナビ全体のコンテナ。タブを中央寄せする。
     <header className="flex items-center justify-center">
       {/* tabs: 中央のシーン切り替えボタンを丸いガラス風バーにまとめる。 */}
-      {/* aria-label: 誕生石シーンでは月のボタン列（MonthPicker）も <nav> になるので、読み上げで 2 つを区別できるよう名前を付ける */}
+      {/* aria-label: 誕生石シーンでは月のラベル（MonthLabels）も <nav> になるので、読み上げで 2 つを区別できるよう名前を付ける */}
       <nav
         aria-label="シーンを選ぶ"
         className="pointer-events-auto flex gap-1.25 rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] p-1.25 backdrop-blur-[14px]"
@@ -31,7 +31,7 @@ export default function SceneNav({ active, onSelect }: SceneNavProps) {
               // lang="en": ラベル（Sun / Beach / Jewels）を英語として読み上げさせる（ページ全体は日本語）
               lang="en"
               // aria-current: 今表示しているシーンのタブを読み上げでも伝える（色の違いだけに頼らない）。
-              // aria-pressed にしないのは、押しても選択を外せない（月のボタンのような切り替えではない）ため
+              // aria-pressed にしないのは、押しても選択を外せない（押し直すと外れる切り替えボタンではない）ため
               aria-current={isActive ? "true" : undefined}
               onClick={() => onSelect(tab.id)}
               // 前半は常時適用、後半の三項演算子で選択中/非選択のスタイルを差し替える。

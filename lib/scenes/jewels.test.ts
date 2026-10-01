@@ -3,32 +3,44 @@ import { join } from "node:path";
 import * as THREE from "three";
 import { describe, expect, test, vi } from "vitest";
 import { BIRTHSTONE_IDS, type BirthstoneId, birthstoneById } from "@/lib/birthstones";
-import { HERO } from "@/lib/scene";
+import { COMPACT_MAX_HEIGHT_PX, HERO } from "@/lib/scene";
 import {
   aberrationFor,
+  adjacentStone,
   advanceBrightness,
   advanceLift,
   advanceSpin,
+  advanceViewShift,
   applyStoneBrightness,
+  applyViewShift,
+  BASE_FOV_DEG,
   DIMMED_BRIGHTNESS,
   disposeRefractionBvh,
   exposureFor,
   FOCUS_DISTANCE_FACTOR,
+  FOV_REFERENCE_ASPECT,
+  fitFov,
   focusPose,
+  focusViewShift,
   geometryBounds,
   HOVER_LIFT_MM,
   JEWELS_ENV_URL,
   JEWELS_GLB_URL,
   jewelHero,
+  MAX_FOV_DEG,
   MIN_ABERRATION,
   nearestAngle,
+  nextOrbitRequest,
+  ORBIT_STEP_RAD,
   OVERVIEW_POSE,
   orbitAngles,
+  orbitStepFor,
   overviewHero,
   pickStoneGeometries,
   RING_RADIUS_MM,
   ringAngle,
   ringPosition,
+  SHEET_VIEW_SHIFT,
   SPIN_SPEED,
   STONE_LIFT_MM,
   stoneBrightness,
@@ -36,7 +48,6 @@ import {
   stoneYaw,
   TINT_POWER,
   tintFromColor,
-  toggleStone,
   type Vec3,
 } from "@/lib/scenes/jewels";
 
@@ -315,8 +326,8 @@ describe("aberrationFor / exposureFor / tintFromColor", () => {
     expect(aberrationFor(0.044, -5)).toBe(MIN_ABERRATION);
   });
 
-  // 光量スライダーは露出の倍率。Cycles の露出（+1 段 = 2 倍）に合わせた基準にかける
-  test("exposureFor は光量 1 で 2 倍（Cycles の +1 段）になり、負の値は 0 にする", () => {
+  // 光量スライダーは露出の倍率。Blender の jewels.blend の露出（+1 段 = 2 倍）に合わせた基準にかける
+  test("exposureFor は光量 1 で 2 倍（+1 段）になり、負の値は 0 にする", () => {
     // Assert: 光量 1
     expect(exposureFor(1)).toBeCloseTo(2);
     // Assert: 光量 0.5
@@ -514,23 +525,112 @@ describe("advanceSpin / advanceLift", () => {
   });
 });
 
-// toggleStone: 月のボタンで石を選ぶ。選んでいる月をもう一度押すと選択を外す（aria-pressed の切り替えボタンと同じ動き）
-describe("toggleStone", () => {
-  // [今選んでいる石, 押した月の石, 期待する選択]
-  test.each<[BirthstoneId | null, BirthstoneId, BirthstoneId | null]>([
-    // 何も選んでいなければ、押した月の石を選ぶ
-    [null, "ruby", "ruby"],
-    // 別の石を選んでいれば、押した月の石に替える
-    ["pearl", "ruby", "ruby"],
-    // 同じ月をもう一度押したら、選択を外して全体に戻る
-    ["ruby", "ruby", null],
-  ])("%s を選んでいるときに %s を押すと %s になる", (current, pressed, expected) => {
-    // Act / Assert: 期待する選択になる
-    expect(toggleStone(current, pressed)).toBe(expected);
+// adjacentStone: 解説カードの ‹ › で移る、前後の月の石
+describe("adjacentStone", () => {
+  // [今の石, 向き, 期待する石]
+  test.each<[BirthstoneId, -1 | 1, BirthstoneId]>([
+    // 4 月の前は 3 月
+    ["diamond", -1, "aquamarine"],
+    // 4 月の次は 5 月
+    ["diamond", 1, "emerald"],
+    // 12 月の次は 1 月に回り込む
+    ["blue-topaz", 1, "garnet"],
+    // 1 月の前は 12 月に回り込む
+    ["garnet", -1, "blue-topaz"],
+  ])("%s の %i（-1 = 前、1 = 次）の月の石は %s", (id, step, expected) => {
+    // Act / Assert: 期待する石になる
+    expect(adjacentStone(birthstoneById(id), step).id).toBe(expected);
+  });
+
+  // 次へ進んでから前へ戻ると、元の石になる（12 か月すべて）
+  test.each(BIRTHSTONE_IDS)("%s は、次の月の石の前の月の石", (id) => {
+    // Arrange: 石
+    const stone = birthstoneById(id);
+    // Act / Assert: 次の前は自分
+    expect(adjacentStone(adjacentStone(stone, 1), -1)).toBe(stone);
+  });
+
+  // 壊れたデータ（1〜12 の整数でない月）で、別の石を黙って返さない
+  test.each([0, 13, 4.5, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "月が %s なら RangeError を投げる",
+    (month) => {
+      // Arrange: 月だけを変えた石（元のデータは書き換えず、新しいオブジェクトを作る）
+      const stone = { ...birthstoneById("diamond"), month };
+      // Act / Assert: 範囲の外なので投げる
+      expect(() => adjacentStone(stone, 1)).toThrow(RangeError);
+    },
+  );
+});
+
+// ORBIT_STEP_RAD: 解説カードの回すボタンを 1 回押したときに、カメラが石のまわりを回り込む角度
+describe("ORBIT_STEP_RAD", () => {
+  // 12 回押すと 1 周して元の向きに戻る（時計の 1 時間ぶん = 30°）
+  test("12 回でちょうど 1 周（1 回 30°）", () => {
+    // Assert: 12 回ぶんが 2π
+    expect(ORBIT_STEP_RAD * 12).toBeCloseTo(Math.PI * 2, 12);
   });
 });
 
-// jewelHero: 石を選んだときに、左下の見出しへ出す文言
+// nextOrbitRequest: 回すボタンを押したときの、次の指示（番号は増え続ける）
+describe("nextOrbitRequest", () => {
+  // 最初の 1 回は番号 1
+  test("前の指示が無ければ、番号 1 の指示を作る", () => {
+    // Act / Assert: 向きと番号
+    expect(nextOrbitRequest(null, 1)).toEqual({ direction: 1, serial: 1 });
+  });
+
+  // 向きを替えても番号は戻らない（戻すと、回し済みの番号と重なった指示が黙って捨てられる）
+  test("右のあとに左を押しても、番号は増える", () => {
+    // Act / Assert: 2 回目は左で番号 2
+    expect(nextOrbitRequest(nextOrbitRequest(null, 1), -1)).toEqual({ direction: -1, serial: 2 });
+  });
+
+  // 同じ向きを続けて押しても、別の指示として届く
+  test("同じ向きを続けて押すと、番号が 1 ずつ増える", () => {
+    // Arrange: 1 回目
+    const first = nextOrbitRequest(null, -1);
+    // Act: 2 回目
+    const second = nextOrbitRequest(first, -1);
+    // Assert: 番号が増えた
+    expect(second).toEqual({ direction: -1, serial: 2 });
+  });
+});
+
+// orbitStepFor: まだ回していない指示なら、回り込む角度を返す
+describe("orbitStepFor", () => {
+  // 何も押されていない
+  test("指示が無ければ null", () => {
+    // Act / Assert: 回さない
+    expect(orbitStepFor(null, 0)).toBeNull();
+  });
+
+  // 同じ指示で 2 回回さない（effect のやり直しや、シーンを開いたときの古い指示）
+  test("回し済みの番号なら null", () => {
+    // Act / Assert: 回さない
+    expect(orbitStepFor({ direction: 1, serial: 3 }, 3)).toBeNull();
+  });
+
+  // 新しい指示なら、向きの符号を付けた 1 回ぶんの角度
+  test.each<[-1 | 1, number]>([
+    [1, ORBIT_STEP_RAD],
+    [-1, -ORBIT_STEP_RAD],
+  ])("向き %i の新しい指示なら、%f ラジアン回す", (direction, expected) => {
+    // Act / Assert: 1 回ぶん
+    expect(orbitStepFor({ direction, serial: 4 }, 3)).toBeCloseTo(expected, 12);
+  });
+
+  // 番号が増え続ける限り、途中で何があっても新しい指示は回る（番号を戻すと、回し済みの番号と重なって黙って捨てられる）
+  test("番号を戻さなければ、回し済みのあとに押した指示も回る", () => {
+    // Arrange: 1 回目を回し済み
+    const first = nextOrbitRequest(null, 1);
+    // Act: 続けて押した指示
+    const second = nextOrbitRequest(first, 1);
+    // Assert: 回る
+    expect(orbitStepFor(second, first.serial)).not.toBeNull();
+  });
+});
+
+// jewelHero: 石を選んだときに、解説カードと読み上げの知らせへ出す文言
 describe("jewelHero", () => {
   // 4 月のダイヤモンドの見出し
   test("月番号・英語の月名・大文字の英名・和名・石言葉を並べる", () => {
@@ -556,6 +656,408 @@ describe("jewelHero", () => {
     expect(jewelHero(birthstoneById("diamond")).announcement).toBe(
       "4月の誕生石、ダイヤモンドを表示しています。",
     );
+  });
+});
+
+// halfWidthSlope: 縦の画角（度）と縦横比から、横方向に見える範囲の広がり（tan(横の画角 / 2)）を求める
+function halfWidthSlope(fovDeg: number, aspect: number): number {
+  // 縦の半分の画角の tan に縦横比を掛けると、横の半分の画角の tan になる
+  return Math.tan(THREE.MathUtils.degToRad(fovDeg) / 2) * aspect;
+}
+
+// fitFov: 画面の縦横比に合わせた、カメラの縦の画角
+describe("fitFov", () => {
+  // 横長の画面（パソコン）では、基準の画角のまま
+  test("基準より横長の画面では、基準の画角を返す", () => {
+    // Act / Assert: 16:9 と、ちょうど基準の縦横比
+    expect(fitFov(16 / 9)).toBe(BASE_FOV_DEG);
+    // ちょうど基準の縦横比でも同じ
+    expect(fitFov(FOV_REFERENCE_ASPECT)).toBe(BASE_FOV_DEG);
+  });
+
+  // 縦長の画面（スマホ）では、横に見える範囲が基準の縦横比のときと同じになるよう、縦の画角を広げる
+  test("縦長の画面では、横に見える範囲が基準の縦横比のときと同じになる", () => {
+    // Arrange: スマホの縦持ち（390 × 844）
+    const aspect = 390 / 844;
+    // Act: 縦の画角を求める
+    const fov = fitFov(aspect);
+    // Assert: 基準より広い
+    expect(fov).toBeGreaterThan(BASE_FOV_DEG);
+    // Assert: 横に見える範囲は、基準の縦横比・基準の画角のときと同じ
+    expect(halfWidthSlope(fov, aspect)).toBeCloseTo(
+      halfWidthSlope(BASE_FOV_DEG, FOV_REFERENCE_ASPECT),
+      10,
+    );
+  });
+
+  // 式の性質だけでなく、具体的な値も固定する（基準の縦横比を取り違えても、上の性質のテストは通ってしまうため）
+  test("スマホの縦持ち（390 × 844）では、約 76.45° にする", () => {
+    // Act / Assert: 差が 0.05° 未満
+    expect(fitFov(390 / 844)).toBeCloseTo(76.45, 1);
+  });
+
+  // 基準の縦横比をまたいでも、画角が跳ばない（窓の幅を変えたときに、画面が急に引いたり寄ったりしない）
+  test("基準の縦横比のすぐ手前では、基準の画角とほぼ同じ", () => {
+    // Act / Assert: 0.999 のときの画角は、基準との差が 0.05° 未満
+    expect(Math.abs(fitFov(FOV_REFERENCE_ASPECT - 0.001) - BASE_FOV_DEG)).toBeLessThan(0.05);
+  });
+
+  // 上限に当たる境目（tan 20° ≈ 0.364）の前後で、上限より手前なら上限未満、奥なら上限ちょうど
+  test("縦横比が約 0.364 より細いと上限に当たる", () => {
+    // Act / Assert: 境目より少し太い 0.37 では上限未満
+    expect(fitFov(0.37)).toBeLessThan(MAX_FOV_DEG);
+    // 境目より少し細い 0.36 では上限ちょうど
+    expect(fitFov(0.36)).toBe(MAX_FOV_DEG);
+  });
+
+  // 極端に細い画面では、魚眼のようにゆがまないよう、広げすぎない
+  test("極端に細い画面でも、MAX_FOV_DEG を超えない", () => {
+    // Act / Assert: 縦横比 0.05（幅が高さの 1/20）
+    expect(fitFov(0.05)).toBe(MAX_FOV_DEG);
+  });
+
+  // 細くなるほど広げる（画面の向きを変えたり、窓の幅を変えたりしたときに、なめらかに変わる）
+  test("画面が細いほど、縦の画角を広くする", () => {
+    // Act / Assert: 縦横比 0.8 より 0.5 のほうが広い
+    expect(fitFov(0.5)).toBeGreaterThan(fitFov(0.8));
+  });
+
+  // 描き始めの一瞬など、大きさが 0 の画面から求めた縦横比でも、壊れた値を返さない
+  test("縦横比が 0・負・無限大・NaN のときは、基準の画角を返す", () => {
+    // Act / Assert: 幅 0（縦横比 0）
+    expect(fitFov(0)).toBe(BASE_FOV_DEG);
+    // 負の値
+    expect(fitFov(-1)).toBe(BASE_FOV_DEG);
+    // 高さ 0（縦横比 無限大）
+    expect(fitFov(Number.POSITIVE_INFINITY)).toBe(BASE_FOV_DEG);
+    // 幅も高さも 0（0 / 0）
+    expect(fitFov(Number.NaN)).toBe(BASE_FOV_DEG);
+  });
+});
+
+// focusViewShift: スマホで解説カードのシートが開いているとき、描く範囲を上へずらす量（px）
+describe("focusViewShift", () => {
+  // スマホ向けの配置でシートが開いていれば、画面の高さの SHEET_VIEW_SHIFT 倍だけずらす
+  test("スマホの縦持ちでシートが開いているときは、画面の高さに比例してずらす", () => {
+    // Act / Assert: 390 × 844 でシートが開いている（844 × 0.23 = 194.12 → 194）
+    expect(focusViewShift(390, 844, true)).toBe(194);
+    // 高さが変われば、ずらす量も変わる（667 × 0.23 = 153.41 → 153）
+    expect(focusViewShift(375, 667, true)).toBe(153);
+  });
+
+  // シートが無ければ、石は画面の真ん中でよい
+  test("シートが閉じているときは、ずらさない", () => {
+    // Act / Assert: スマホでもシートが無ければ 0
+    expect(focusViewShift(390, 844, false)).toBe(0);
+  });
+
+  // 横持ちのスマホ（幅は 768px 以上でも高さが低い）もスマホ向けの配置で、シートが下に出る
+  test("横持ちのスマホ（844 × 390）でも、シートが開いていればずらす", () => {
+    // Act / Assert: 390 × 0.23 = 89.7 → 90
+    expect(focusViewShift(844, 390, true)).toBe(90);
+  });
+
+  // パソコン向けの配置では解説カードは左下にあり、真ん中の石に重ならないので、石を上へずらす必要がない
+  test("幅が 768px 以上で高さも十分な画面（パソコン向けの配置）では、シートが開いていてもずらさない", () => {
+    // Act / Assert: ちょうど境目の 768px
+    expect(focusViewShift(768, 900, true)).toBe(0);
+    // その 1px 手前はスマホ扱い
+    expect(focusViewShift(767, 900, true)).toBe(Math.round(900 * SHEET_VIEW_SHIFT));
+  });
+
+  // 高さの境目（480px）は isCompactLayout と同じ。ちょうど 480px まではスマホ向けの配置（シートが下に出る）
+  test("幅が広くても、高さが 480px 以下ならずらし、481px ならずらさない", () => {
+    // Act / Assert: ちょうど境目（480 × 0.23 = 110.4 → 110）
+    expect(focusViewShift(1280, COMPACT_MAX_HEIGHT_PX, true)).toBe(110);
+    // 1px 高い
+    expect(focusViewShift(1280, COMPACT_MAX_HEIGHT_PX + 1, true)).toBe(0);
+  });
+
+  // 描き始めの一瞬など、大きさが 0 の画面でも壊れた値を返さない
+  test("高さが 0 のときは、ずらさない", () => {
+    // Act / Assert: 高さ 0
+    expect(focusViewShift(390, 0, true)).toBe(0);
+  });
+
+  // 壊れた大きさで NaN を返すと、カメラの投影が NaN になって何も描かれなくなるので、0 にする
+  test("幅や高さが NaN・負・無限大のときは、ずらさない", () => {
+    // Act / Assert: 高さが NaN
+    expect(focusViewShift(390, Number.NaN, true)).toBe(0);
+    // 幅が NaN
+    expect(focusViewShift(Number.NaN, 844, true)).toBe(0);
+    // 幅が負
+    expect(focusViewShift(-1, 844, true)).toBe(0);
+    // 高さが無限大
+    expect(focusViewShift(390, Number.POSITIVE_INFINITY, true)).toBe(0);
+    // 幅が 0
+    expect(focusViewShift(0, 844, true)).toBe(0);
+    // 幅が無限大
+    expect(focusViewShift(Number.POSITIVE_INFINITY, 390, true)).toBe(0);
+  });
+});
+
+// advanceViewShift: 描く範囲をずらす量を、1 フレームぶん目標へ近づける（カメラの移動となめらかにそろえる）
+describe("advanceViewShift", () => {
+  // 一気に跳ばず、目標へ少しずつ近づく
+  test("目標へ近づくが、1 フレームでは届かない", () => {
+    // Act: 0 px から 150 px へ、60 fps の 1 フレームぶん進める
+    const next = advanceViewShift(0, 150, 1 / 60);
+    // Assert: 0 より進み、150 には届かない
+    expect(next).toBeGreaterThan(0);
+    // 届かない
+    expect(next).toBeLessThan(150);
+  });
+
+  // 戻るとき（シートを閉じたとき）も同じように近づく
+  test("目標が小さいほうでも近づく", () => {
+    // Act: 150 px から 0 px へ 1 フレーム
+    const next = advanceViewShift(150, 0, 1 / 60);
+    // Assert: 150 より小さく、0 より大きい
+    expect(next).toBeLessThan(150);
+    // まだ 0 ではない
+    expect(next).toBeGreaterThan(0);
+  });
+
+  // 目標のすぐ近く（0.5 px 未満）まで来たら、ぴったり目標にする（いつまでも小さく動き続けて毎フレーム描き直さないように）
+  test("目標まで 0.5 px 未満なら、目標そのものを返す", () => {
+    // Act / Assert: 残り 0.4 px
+    expect(advanceViewShift(149.6, 150, 1 / 60)).toBe(150);
+    // 下向きでも同じ
+    expect(advanceViewShift(0.3, 0, 1 / 60)).toBe(0);
+  });
+
+  // 着いたあとは、目標とぴったり同じ値を返し続ける（呼び出し側は === で比べて、同じなら描き直さないため）
+  test("目標に着いているときは、目標そのものを返す", () => {
+    // Act / Assert: 0 のまま（-0 にもならない。toBe は Object.is で比べる）
+    expect(advanceViewShift(0, 0, 1 / 60)).toBe(0);
+    // 152 のまま
+    expect(advanceViewShift(152, 152, 1 / 60)).toBe(152);
+  });
+
+  // 1 フレームの進み方を、なめらかさの係数から求めた値で固定する（速すぎ・遅すぎの取り違えを拾う）
+  test("60 fps の 1 フレームでは、残りの約 8% だけ進む", () => {
+    // Act / Assert: 0 → 150 で約 12 px（150 × (1 − e^(−5/60))）
+    expect(advanceViewShift(0, 150, 1 / 60)).toBeCloseTo(12, 0);
+  });
+
+  // 目標のすぐ近くでなければ、ぴったりにはしない（しきい値を大きくしすぎる取り違えを拾う）
+  test("目標まで 0.5 px 以上残っていれば、目標にはしない", () => {
+    // Act: 残り 20 px から 1 フレーム（進んだあとも 1 px 以上残る）
+    const next = advanceViewShift(130, 150, 1 / 60);
+    // Assert: 目標ではない
+    expect(next).not.toBe(150);
+  });
+
+  // タブを離れて戻ったときなど、前のフレームから長い時間が経っていても、行き過ぎずに目標に着く
+  test("経過時間がとても長いときは、行き過ぎずに目標に着く", () => {
+    // Act / Assert: 5 秒ぶんを 1 回で進める
+    expect(advanceViewShift(0, 150, 5)).toBe(150);
+    // 下向きでも同じ
+    expect(advanceViewShift(150, 0, 5)).toBe(0);
+  });
+
+  // 経過時間が壊れているときは動かさない（負の時間では目標から遠ざかり、NaN では値が NaN のまま戻らなくなるため）
+  test("経過時間が 0・負・NaN のときは、今の値のまま", () => {
+    // Act / Assert: 0 秒
+    expect(advanceViewShift(40, 150, 0)).toBe(40);
+    // 負の時間
+    expect(advanceViewShift(40, 150, -1 / 60)).toBe(40);
+    // NaN
+    expect(advanceViewShift(40, 150, Number.NaN)).toBe(40);
+  });
+
+  // 今の値が壊れていたら、目標に置き直して立て直す（NaN のまま毎フレーム描き直し続けないように）
+  test("今の値が NaN のときは、目標そのものを返す", () => {
+    // Act / Assert: 今が NaN
+    expect(advanceViewShift(Number.NaN, 150, 1 / 60)).toBe(150);
+  });
+
+  // 下向き（シートを閉じたとき）も、途中で行き過ぎず、戻らずに 0 へ着く
+  test("下向きにフレームを重ねても、0 を下回らず、戻らずに着く", () => {
+    // Arrange: 150 px から始める
+    let shift = 150;
+    // Act: 60 fps で 2 秒ぶん進める
+    for (let frame = 0; frame < 120; frame++) {
+      // 1 フレーム進める
+      const next = advanceViewShift(shift, 0, 1 / 60);
+      // Assert: 前のフレームより大きくならない（行ったり来たりしない）
+      expect(next).toBeLessThanOrEqual(shift);
+      // Assert: 0 を下回らない
+      expect(next).toBeGreaterThanOrEqual(0);
+      // 次のフレームへ
+      shift = next;
+    }
+    // Assert: 2 秒後には 0 に着いている
+    expect(shift).toBe(0);
+  });
+
+  // 十分な時間が経てば目標に着く（途中で止まったり行き過ぎたりしない）
+  test("フレームを重ねると、行き過ぎずに目標へ着く", () => {
+    // Arrange: 0 px から始める
+    let shift = 0;
+    // Act: 60 fps で 2 秒ぶん進める
+    for (let frame = 0; frame < 120; frame++) {
+      // 1 フレーム進める
+      shift = advanceViewShift(shift, 150, 1 / 60);
+      // Assert: どのフレームでも目標を超えない
+      expect(shift).toBeLessThanOrEqual(150);
+    }
+    // Assert: 2 秒後には目標に着いている
+    expect(shift).toBe(150);
+  });
+});
+
+// applyViewShift: 求めたずらす量をカメラに反映する（変わっていなければ何もしない）。
+// 下のテストの 152 px は任意の量（以前の SHEET_VIEW_SHIFT 0.18 × 844 の名残。今の値は 194 px だが、ずらし方の確認には量は問わない）
+describe("applyViewShift", () => {
+  // projectedY: カメラから見て正面 10 mm 先の点が、画面のどの高さに写るか（-1 = 下端、0 = 真ん中、1 = 上端）
+  function projectedY(camera: THREE.PerspectiveCamera): number {
+    // 投影行列を最新にしてから、正面の点を画面の座標に直す
+    camera.updateMatrixWorld();
+    // カメラは原点から -Z を向いているので、(0, 0, -10) が正面
+    return new THREE.Vector3(0, 0, -10).project(camera).y;
+  }
+
+  // 正のずらす量で、写るものが上へ動く（向きを取り違えると、石がシートに隠れる側へ動いてしまう）
+  test("正の量をずらすと、正面の点が画面の上側に写る", () => {
+    // Arrange: 390 × 844 の画面のカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // Act: 152 px ずらす
+    applyViewShift(camera, 152, 390, 844);
+    // Assert: 正面の点が真ん中より上に写る
+    expect(projectedY(camera)).toBeGreaterThan(0);
+  });
+
+  // 量も画面の大きさも同じなら、投影を作り直さない（毎フレーム呼ばれるので、無駄な計算をしない）
+  test("同じ量と大きさでもう一度呼んでも、作り直さない", () => {
+    // Arrange: 一度ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    const first = applyViewShift(camera, 152, 390, 844);
+    // Act: 同じ値で 2 回目
+    const second = applyViewShift(camera, 152, 390, 844);
+    // Assert: 1 回目は作り直し、2 回目は何もしない
+    expect([first, second]).toEqual([true, false]);
+  });
+
+  // 画面の大きさが変わったら、同じ量でも作り直す（古い大きさのままだと、写る範囲がゆがむ）
+  test("画面の大きさが変わったら、作り直す", () => {
+    // Arrange: 一度ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    applyViewShift(camera, 152, 390, 844);
+    // Act: 高さだけが変わった
+    const updated = applyViewShift(camera, 152, 390, 700);
+    // Assert: 作り直し、新しい大きさを覚えている
+    expect(updated).toBe(true);
+    // 新しい高さ
+    expect(camera.view?.fullHeight).toBe(700);
+  });
+
+  // アニメーション中は、毎フレーム 0 以外の量から別の 0 以外の量へ変わる。そのたびに作り直さないと、動きが止まって見える
+  test("0 以外の量から別の 0 以外の量へ変えると、作り直す", () => {
+    // Arrange: 152 px ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    applyViewShift(camera, 152, 390, 844);
+    // Act: 100 px に変える
+    const updated = applyViewShift(camera, 100, 390, 844);
+    // Assert: 作り直し、新しい量を覚えている
+    expect(updated).toBe(true);
+    // 新しい量
+    expect(camera.view?.offsetY).toBe(100);
+  });
+
+  // ずらした量のぶんだけ、写る位置が動く（量や高さの取り違えを拾う）
+  test("高さ 844 px で 152 px ずらすと、正面の点は -1〜1 の座標で約 0.36（画面の高さの約 18%）上に写る", () => {
+    // Arrange: 390 × 844 の画面のカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // Act: 152 px ずらす
+    applyViewShift(camera, 152, 390, 844);
+    // Assert: 画面の座標（-1〜1）で 2 × 152 / 844 ≈ 0.36 上
+    expect(projectedY(camera)).toBeCloseTo((2 * 152) / 844, 5);
+  });
+
+  // 幅だけが変わっても作り直す（窓の幅だけを変えたとき）
+  test("幅だけが変わっても、作り直す", () => {
+    // Arrange: 一度ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    applyViewShift(camera, 152, 390, 844);
+    // Act: 幅だけを 375 に変える
+    const updated = applyViewShift(camera, 152, 375, 844);
+    // Assert: 作り直し、新しい幅を覚えている
+    expect(updated).toBe(true);
+    // 新しい幅
+    expect(camera.view?.fullWidth).toBe(375);
+  });
+
+  // ずらしているときに画面の大きさが 0 になったら、ずらしを解く（大きさ 0 のまま切り取ると投影が壊れる）
+  test("ずらしているカメラで画面の大きさが 0 になったら、ずらしを解く", () => {
+    // Arrange: 一度ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    applyViewShift(camera, 152, 390, 844);
+    // Act: 幅が 0 になった
+    const updated = applyViewShift(camera, 152, 0, 844);
+    // Assert: 作り直し、ずらしが解けている
+    expect(updated).toBe(true);
+    // 解けている
+    expect(camera.view?.enabled).toBe(false);
+  });
+
+  // 壊れた量（NaN・無限大）でずらすと投影が NaN になって何も描かれなくなるので、ずらさずに解く。
+  // どの値も、ずらした状態から始める（前の値で解けたあとだと、解く処理を通ったかを確かめられないため）
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "ずらす量が %s のときは、ずらしを解く",
+    (shift) => {
+      // Arrange: 一度ずらしたカメラ
+      const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+      // 1 回目
+      applyViewShift(camera, 152, 390, 844);
+      // Act: 壊れた量を渡す
+      const updated = applyViewShift(camera, shift, 390, 844);
+      // Assert: 作り直した
+      expect(updated).toBe(true);
+      // ずらしていない
+      expect(camera.view?.enabled).toBe(false);
+      // 正面の点は真ん中に写る（NaN にならない）
+      expect(projectedY(camera)).toBeCloseTo(0, 10);
+    },
+  );
+
+  // 0 にしたら、ずらしを解いて元の真ん中に戻す
+  test("0 にすると、ずらしを解いて真ん中に戻す", () => {
+    // Arrange: 一度ずらしたカメラ
+    const camera = new THREE.PerspectiveCamera(40, 390 / 844, 0.5, 2000);
+    // 1 回目
+    applyViewShift(camera, 152, 390, 844);
+    // Act: 0 にする
+    const updated = applyViewShift(camera, 0, 390, 844);
+    // Assert: 作り直した
+    expect(updated).toBe(true);
+    // ずらしが解けている
+    expect(camera.view?.enabled).toBe(false);
+    // 正面の点が真ん中に写る
+    expect(projectedY(camera)).toBeCloseTo(0, 10);
+  });
+
+  // 一度もずらしていないカメラに 0 を渡しても、何もしない
+  test("ずらしていないカメラに 0 を渡しても、何もしない", () => {
+    // Arrange: 新しいカメラ
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 2000);
+    // Act / Assert: 何もしない
+    expect(applyViewShift(camera, 0, 390, 844)).toBe(false);
+  });
+
+  // 描き始めの一瞬など、画面の大きさが 0 のときにずらすと投影が壊れるので、ずらさない
+  test("画面の大きさが 0 のときは、ずらさない", () => {
+    // Arrange: 新しいカメラ
+    const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 2000);
+    // Act: 高さ 0 で 152 px
+    applyViewShift(camera, 152, 390, 0);
+    // Assert: ずらしていない
+    expect(camera.view?.enabled ?? false).toBe(false);
   });
 });
 
