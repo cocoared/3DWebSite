@@ -30,7 +30,7 @@ export default function ControlPanel({ tab, values, onChange }: ControlPanelProp
     // control: 開閉ボタンとパネルの外枠。--accent でシーン色を中へ伝える。
     // flex-col-reverse: 読み上げの順は「ボタン → パネル」のまま、見た目はボタンを下（親指の届く位置）に置き、パネルを上に開く。
     // min-h-0: スマホ向けの配置で画面が低い（横向きなど）ときは、外枠ごと縮んで、開閉ボタンが画面の下にはみ出さないようにする。
-    // パソコン向けの配置（roomy:min-h-auto）では縮めず、先に詳細パネルが縮む（元の動き）
+    // パソコン向けの配置（roomy:min-h-auto）では縮めない（パネルはいつも全部見せる）
     <div
       style={accentStyle}
       className="pointer-events-auto flex min-h-0 roomy:min-h-auto flex-col-reverse items-end gap-2"
@@ -74,10 +74,10 @@ export default function ControlPanel({ tab, values, onChange }: ControlPanelProp
         <div className="mb-2 roomy:flex hidden items-center justify-between font-mono text-[11px] uppercase tracking-[0.2em] opacity-85">
           {/* 見出し。英語として読み上げさせる */}
           <span lang="en">Environment</span>
-          {/* 脈打つ点（飾りなので読み上げない） */}
+          {/* 脈打つ点（飾りなので読み上げない）。動きを減らす設定では脈打たせない */}
           <span
             aria-hidden="true"
-            className="h-1.75 w-1.75 animate-[pdot_1.9s_ease-in-out_infinite] rounded-full bg-(--accent)"
+            className="h-1.75 w-1.75 animate-[pdot_1.9s_ease-in-out_infinite] rounded-full bg-(--accent) motion-reduce:animate-none"
           />
         </div>
 

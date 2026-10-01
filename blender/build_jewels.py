@@ -3,7 +3,7 @@
 # 実行すると、シーンを作り直して blender/jewels.blend に保存し、Web 用の public/jewels/jewels.glb を書き出す。
 #
 # 実行方法（どちらでも同じ結果になる）:
-#   - BlenderMCP から GUI の Blender で実行する（blender/README.md の「MCP から実行する」を参照）
+#   - BlenderMCP から GUI の Blender で実行する（blender/README.md の「BlenderMCP から GUI の Blender で実行する」を参照）
 #   - ヘッドレスで実行する:
 #       blender.exe --background --factory-startup --python blender/build_jewels.py
 
@@ -19,7 +19,7 @@ from mathutils import Vector
 REPO = Path(__file__).resolve().parents[1]
 # STONES_JSON: 誕生石のデータ。Web 側（lib/birthstones.ts）と同じファイルを読み、値の食い違いを防ぐ
 STONES_JSON = REPO / "lib" / "birthstones.json"
-# BLEND_PATH: 組み立てたシーンの保存先。render_env.py / render_turntables.py はこのファイルを開いて描画する
+# BLEND_PATH: 組み立てたシーンの保存先。render_env.py はこのファイルを開いて描画する
 BLEND_PATH = REPO / "blender" / "jewels.blend"
 # GLB_PATH: Web で読み込む形状データ（glTF のバイナリ形式 .glb）の書き出し先
 GLB_PATH = REPO / "public" / "jewels" / "jewels.glb"
@@ -489,7 +489,7 @@ def spherical(azimuth_deg: float, elevation_deg: float, distance: float) -> Vect
 
 def build_studio(scene: bpy.types.Scene, coll: bpy.types.Collection) -> None:
     # 宝石撮影のスタジオを作る。暗い背景に、真上の面光源・周りを囲む 2 段のストリップ・小さな強い点光源を置く。
-    # どの方向から見ても明るさがそろうよう、ぐるりと囲む配置にしている（ターンテーブルでカメラが一周するため）
+    # どの方向から見ても明るさがそろうよう、ぐるりと囲む配置にしている（Web ではカメラを石のまわりにぐるりと回せ、環境マップも全方向に焼くため）
     add_emitter(coll, "Light_Top", (60.0, 60.0), Vector((0.0, 0.0, 120.0)), TOP_LIGHT_STRENGTH)
     # 輪ごとにストリップライトを並べる
     for ring_index, (elevation, count, width, height, strong, weak, offset) in enumerate(STUDIO_RINGS):
@@ -561,7 +561,7 @@ def build_preview_floor(coll: bpy.types.Collection) -> None:
     floor = bpy.context.active_object
     # 名前を付ける
     floor.name = "Preview_Floor"
-    # ターンテーブルや環境マップの描画には写さない
+    # 環境マップの描画には写さない
     floor.hide_render = True
     # ベルベット風のマテリアル
     mat, bsdf = principled_material("JWL_Velvet")
@@ -580,7 +580,7 @@ def build_preview_floor(coll: bpy.types.Collection) -> None:
 
 
 def build_camera(scene: bpy.types.Scene, coll: bpy.types.Collection) -> None:
-    # 確認用とターンテーブル用に使うカメラを作る（ターンテーブルでは render_turntables.py が位置とレンズを決め直す）
+    # 確認用に使うカメラを作る
     cam_data = bpy.data.cameras.new("JWL_Camera")
     # 確認用のレンズ（mm）。時計の文字盤全体が入る画角
     cam_data.lens = 50.0
@@ -601,7 +601,8 @@ def build_camera(scene: bpy.types.Scene, coll: bpy.types.Collection) -> None:
 
 
 def setup_render(scene: bpy.types.Scene) -> None:
-    # Cycles（光の経路を追いかけて描くレンダラー）の設定。宝石は光が中で何度も反射・屈折するので、反射回数を多めにする
+    # Cycles（光の経路を追いかけて描くレンダラー）の設定。宝石は光が中で何度も反射・屈折するので、反射回数を多めにする。
+    # Blender の画面で見た目を確かめるために描くときの設定（環境マップを焼く render_env.py は、解像度・透明・サンプル数などを上書きする）
     scene.render.engine = "CYCLES"
     # GPU が使えない環境なので CPU で描く
     scene.cycles.device = "CPU"
@@ -633,7 +634,7 @@ def setup_render(scene: bpy.types.Scene) -> None:
     scene.cycles.caustics_refractive = False
     # ごく小さい強い光の点（ファイアフライ）を少しぼかしてノイズを抑える
     scene.cycles.blur_glossy = 0.2
-    # 背景を透明にして、Web の詳細パネルの上に石だけを重ねられるようにする
+    # 背景を透明にする（確認用の絵で石だけを見やすくするため。環境マップを焼く render_env.py は不透明に戻す）
     scene.render.film_transparent = True
     # 出力画像の幅（px）
     scene.render.resolution_x = 640

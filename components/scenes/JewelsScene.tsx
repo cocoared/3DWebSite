@@ -14,7 +14,13 @@ import { type ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BIRTHSTONES, type Birthstone, type BirthstoneId, birthstoneById } from "@/lib/birthstones";
+import {
+  dropFocusPromiseIfMoved,
+  type MonthLabelHandles,
+  placeMonthLabels,
+} from "@/lib/monthLabels";
 import type { JewelParams } from "@/lib/scene";
+import { labelAnchor, labelSide, type ScreenPoint } from "@/lib/scenes/jewelLabels";
 import {
   aberrationFor,
   advanceBrightness,
@@ -23,6 +29,7 @@ import {
   advanceViewShift,
   applyStoneBrightness,
   applyViewShift,
+  CAMERA_SMOOTH_TIME,
   disposeRefractionBvh,
   exposureFor,
   fitFov,
@@ -32,8 +39,10 @@ import {
   JEWELS_ENV_URL,
   JEWELS_GLB_URL,
   nearestAngle,
+  type OrbitRequest,
   OVERVIEW_POSE,
   orbitAngles,
+  orbitStepFor,
   pickStoneGeometries,
   ringPosition,
   type StonePlacement,
@@ -50,8 +59,6 @@ const CLICK_TOLERANCE_PX = 5;
 const REFRACTION_BOUNCES = 4;
 // REFRACTION_FRESNEL: 石の縁を白く光らせる強さ（MeshRefractionMaterial の fresnel）。0 で無効
 const REFRACTION_FRESNEL = 0.6;
-// CAMERA_SMOOTH_TIME: カメラが目標へ移るときの時間の目安（秒）。大きいほどゆっくり回り込む
-const CAMERA_SMOOTH_TIME = 0.8;
 // FLOOR_RADIUS_MM: ベルベットの床の半径（mm）。霧で見えなくなる距離より大きくして、床の端を見せない
 const FLOOR_RADIUS_MM = 600;
 // FLOOR_ENV_INTENSITY: 床に環境マップが映り込む強さ。大きいと、スタジオの明るい天井が床に映り、背景が灰色に見える
@@ -94,11 +101,31 @@ interface JewelsSceneProps {
   selected: BirthstoneId | null;
   /** 石がタップされたときに、その石の id で呼ぶ。 */
   onSelect: (id: BirthstoneId) => void;
+  /**
+   * 月のラベルの DOM 要素の入れ物。このシーンが毎フレーム、ラベルを石のそばへ動かす。
+   * 石を選んでいる間は呼び出し側がラベルを描かないが、このシーンも `selected` が null でない間は隠す（DOM と 3D の描き直しの 1 フレームほどのずれの間のため）。
+   */
+  labels: MonthLabelHandles;
+  /**
+   * 読み込みが終わって表示できたら `true`、シーンが消えるとき（タブの切り替え・表示のあとのエラー）に `false` で呼ぶ。
+   * 呼び出し側は、`true` の間だけ月のラベルを描く（読み込み中やエラーのときに、中身の無い「誕生月を選ぶ」ナビを読み上げさせないため）。
+   * 描き直すたびに作り直さない関数（state の更新関数など）を渡す。作り直すと、描き直すたびに false → true と呼ばれ、ラベルが消えて描き直される。
+   */
+  onReady: (isReady: boolean) => void;
+  /** 解説カードの回すボタンからの指示（`direction` は -1 = 左へ・1 = 右へ回り込む）。`serial` が増えるたびに 1 回ぶん回す。何も押されていなければ `null`。 */
+  orbitRequest: OrbitRequest | null;
 }
 
 // JewelsScene: 誕生石シーンのレイアウト担当。計算は lib/scenes/jewels.ts にあり、ここは React のフックと JSX だけ。
 // 形（.glb）と環境マップ（.hdr）を読み込み終わるまで、呼び出し側の <Suspense> が待つ。
-export default function JewelsScene({ params, selected, onSelect }: JewelsSceneProps) {
+export default function JewelsScene({
+  params,
+  selected,
+  onSelect,
+  labels,
+  onReady,
+  orbitRequest,
+}: JewelsSceneProps) {
   // env: Cycles で焼いたスタジオの環境マップ（石の屈折・反射と、パールや床の映り込みに使う）
   const env = useEnvironment({ files: JEWELS_ENV_URL });
   // nodes: .glb の中のオブジェクト（ノード名 = 石の id）。Draco / Meshopt の圧縮は使っていないので、外部のデコーダーを読み込まない
@@ -119,7 +146,7 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
     // 形が変わったときだけ求め直す
     [geometries],
   );
-  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さず、描く範囲のずらしもすぐに切り替える）
+  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さず、描く範囲のずらしも回すボタンによる回り込みもすぐに切り替える）
   const reducedMotion = usePrefersReducedMotion();
 
   // 表示している間だけ、写真向けの色の出し方（トーンマッピングと sRGB 出力）に切り替える
@@ -133,15 +160,27 @@ export default function JewelsScene({ params, selected, onSelect }: JewelsSceneP
   // fov: 縦の画角。縦長の画面（スマホ）では広げて、文字盤の左右の石が切れないようにする（lib/scenes/jewels.ts の fitFov）。
   // 画面の大きさそのもの（size）ではなく、求めた数値だけを購読する。size を購読すると、窓の大きさやスマホのアドレスバーが
   // 変わるたびにシーン全体が描き直されるが、数値なら値が変わったときだけで済む。
-  // 効くのはおもにパソコン向けの配置の横長の画面（画角はいつも 40°、ずらす量はいつも 0）。スマホ向けの配置では、縦長なら画角が、シートが開いていればずらす量が
+  // 効くのはおもにパソコン向けの配置の横長の画面（画角はいつも 40°、ずらす量はいつも 0。縦長のタブレットなどでは画角も変わる）。スマホ向けの配置では、縦長なら画角が、シートが開いていればずらす量が
   // 画面の大きさに応じて変わるので、アドレスバーの伸び縮みでは描き直される
   const fov = useThree((state) => fitFov(state.size.width / state.size.height));
-  // viewShift: スマホ向けの配置（lib/scene.ts の isCompactLayout。横持ちも含む）で詳細のシートが開いている間、石がシートに隠れないよう描く範囲を上へずらす量（px）。同じ理由で数値だけを購読する
+  // viewShift: スマホ向けの配置（lib/scene.ts の isCompactLayout。横持ちも含む）で解説カードのシートが開いている間、石がシートに隠れないよう描く範囲を上へずらす量（px）。同じ理由で数値だけを購読する
   const viewShift = useThree((state) =>
     focusViewShift(state.size.width, state.size.height, selected !== null),
   );
-  // スマホ向けの配置で詳細のシートが開いている間は、石がシートに隠れないよう描く範囲を上へずらす
+  // スマホ向けの配置で解説カードのシートが開いている間は、石がシートに隠れないよう描く範囲を上へずらす
   useViewShift(viewShift, reducedMotion);
+  // 月のラベルを毎フレーム石のそばへ動かす（石を選んでいる間は隠す）。
+  // useViewShift より後に呼ぶ（どちらも優先度 0 の useFrame で、登録順に動く。先に描く範囲のずらしを反映した行列で投影しないと、シートの開け閉めの間ラベルが 1 フレーム遅れる）
+  useMonthLabels(labels, placements, selected === null);
+  // 解説カードの回すボタンが押されたら、カメラを石のまわりに回り込ませる
+  useOrbitRequest(controls, orbitRequest, reducedMotion);
+  // 表示できたことを呼び出し側に知らせ、消えるときに取り消す（月のラベルを描くかどうかに使う）
+  useEffect(() => {
+    // 表示できた
+    onReady(true);
+    // 後始末: 消える（タブの切り替え・表示のあとのエラー）
+    return () => onReady(false);
+  }, [onReady]);
 
   return (
     <>
@@ -250,6 +289,74 @@ function useViewShift(target: number, reducedMotion: boolean): void {
   });
 }
 
+// useMonthLabels: 月のラベル（HTML のボタン）を、毎フレーム石のそばへ動かすフック。
+// 3D の位置を画面の座標に直す計算（projectToScreen）と、ボタンへの書き込み（placeMonthLabels）は lib にある。
+// state は使わず、ボタンの style を直接書き換える（毎フレーム変わる値で、React の描き直しを起こさないため）
+// isShown（石を選んでいないとき true）は、ふだんは効かない（石を選んでいる間は、呼び出し側がラベルそのものを描かない）。
+// カードを閉じた直後など、DOM の描き直しと 3D 側の描き直しが 1 フレームほどずれる間だけ、3D 側がまだ石を選んでいる（受け取った selected が null でない）間は隠すために残す
+function useMonthLabels(
+  handles: MonthLabelHandles,
+  placements: Record<BirthstoneId, StonePlacement>,
+  isShown: boolean,
+): void {
+  // side: ラベルを石の外側（1。パソコン向けの配置の横長の画面）と内側（-1。スマホ向けの配置と、縦長・正方形に近い窓）のどちらに置くか（lib/scenes/jewelLabels.ts の labelSide）。
+  // 数値だけを購読し、切り替わったときだけ描き直す
+  const side = useThree((state) => labelSide(state.size.width, state.size.height));
+  // anchors: 12 石ぶんのラベルの 3D の位置（月の順。置き方か内外が変わったときだけ求め直す）
+  const anchors = useMemo(
+    // 月の順に、ラベルの位置を求める
+    () => BIRTHSTONES.map((stone) => labelAnchor(stone.month, placements[stone.id], side)),
+    // 置き方か内外が変わったときだけ
+    [placements, side],
+  );
+  // point: 画面の位置の入れ物（毎フレーム使い回す）
+  const point = useRef<ScreenPoint>({ x: 0, y: 0, isVisible: false });
+  // 毎フレーム、ラベルを動かす。drei の CameraControls は優先度 -1 の useFrame でカメラを先に動かすので、
+  // 優先度を指定しない（0 の）ここでは、このフレームのカメラの位置で計算できる
+  useFrame((state) => {
+    // カメラの行列を最新にする（描画の直前まで待たずに、このフレームの位置で投影するため）
+    state.camera.updateMatrixWorld();
+    // フォーカスを返す約束を待つ間に、利用者が Tab などでフォーカスをほかへ動かしていたら約束を捨てる（ラベルが見えたときに奪い返さないため）。
+    // ラベルを置く（見えたらフォーカスを移す）前に見る。性能のため入れ物を直接書き換える
+    dropFocusPromiseIfMoved(handles, document.activeElement, document.body);
+    // 12 個のラベルを、それぞれの石のそばへ置く（性能のため入れ物とボタンのスタイルを直接書き換える）
+    placeMonthLabels(
+      handles,
+      anchors,
+      state.camera,
+      state.size.width,
+      state.size.height,
+      isShown,
+      point.current,
+      // 今の時刻（フォーカスの約束の期限と比べる。解説カードを閉じたときと同じ performance.now() の時計）
+      performance.now(),
+    );
+  });
+}
+
+// useOrbitRequest: 解説カードの回すボタンの指示を受けて、カメラを石のまわりに ORBIT_STEP_RAD だけ回り込ませるフック。
+// ドラッグできない人でも、選んだ石をいろいろな向きから見られるようにする（WCAG 2.5.7）。reducedMotion が true なら、動かさずにその場で切り替える
+function useOrbitRequest(
+  controls: CameraControlsImpl | null,
+  request: OrbitRequest | null,
+  reducedMotion: boolean,
+): void {
+  // handled: 最後に回した指示の番号。シーンを開いたときは、その時点の指示を回し済みとして始める（開き直したときに、前の指示でいきなり回らないように）。
+  // effect がやり直されても（controls や reducedMotion が変わったとき・Strict Mode）、同じ指示で 2 回回さないためにも使う
+  const handled = useRef(request?.serial ?? 0);
+  // 指示が替わるたびに 1 回ぶん回す
+  useEffect(() => {
+    // 回り込む角度（回し済み・指示なしなら null。lib/scenes/jewels.ts の orbitStepFor）
+    const step = orbitStepFor(request, handled.current);
+    // camera-controls が無い、または回すものが無ければ何もしない
+    if (!controls || step === null || !request) return;
+    // 回し済みとして覚える
+    handled.current = request.serial;
+    // 方位角の向きに回り込む（上下の角度は変えない）。動きを減らす設定でなければ、なめらかに動かす
+    void controls.rotate(step, 0, !reducedMotion);
+  }, [controls, request, reducedMotion]);
+}
+
 // useStudioLook: 表示している間だけ、レンダラーを写真向けの色の出し方にするフック。
 // Canvas は太陽・浜辺のために linear（sRGB に変換しない）+ flat（トーンマッピングしない）で作っているが、
 // 宝石は写真のような色で見せたいので、トーンマッピング（Neutral）と sRGB 出力に切り替え、離れるときに戻す。
@@ -266,7 +373,7 @@ function useStudioLook(amb: number): void {
       colorSpace: gl.outputColorSpace,
     };
     // Neutral トーンマッピング（Khronos PBR Neutral）。商品写真向けに、明るい部分でも色相と彩度を保ちやすい。
-    // AgX（Cycles の連番で使った色変換）は明るい部分を白へ寄せるので、屈折で強く光るルビーなどが桃色に褪せて見えた
+    // AgX（Blender の Cycles の標準の色変換）は明るい部分を白へ寄せるので、屈折で強く光るルビーなどが桃色に褪せて見えた
     gl.toneMapping = THREE.NeutralToneMapping;
     // 画面へは sRGB で出す（色を人の目に合った明るさにする）
     gl.outputColorSpace = THREE.SRGBColorSpace;
@@ -459,7 +566,7 @@ function JewelStone({
 
   return (
     // 石のメッシュ。位置・回転の初期値を渡し、以降は useFrame が書き換える
-    // biome-ignore lint/a11y/noStaticElementInteractions: <mesh> は DOM の要素ではなく three.js のオブジェクト（R3F の要素）なので当てはまらない。キーボードでは画面の月のボタンから同じ操作ができる
+    // biome-ignore lint/a11y/noStaticElementInteractions: <mesh> は DOM の要素ではなく three.js のオブジェクト（R3F の要素）なので当てはまらない。キーボードでは文字盤の月のラベルから同じ操作ができる
     <mesh
       // 毎フレーム書き換えるための参照
       ref={mesh}

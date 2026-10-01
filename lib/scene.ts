@@ -26,7 +26,7 @@ export interface OceParams {
 
 /** 誕生石シーン（THE JEWELS）の操作パラメータ。 */
 export interface JewelParams {
-  /** 光量。0〜3。レンダラーの露出（toneMappingExposure）の倍率で、1 のとき Cycles の連番画像と同じ明るさになる。 */
+  /** 光量。0〜3。レンダラーの露出（toneMappingExposure）は 2 × 光量になる（光量 1 で露出 2。Blender の jewels.blend の露出 +1 段と同じ）。 */
   amb: number;
   /** 分散（虹色のきらめき＝ファイア）の強さ。0〜1。石ごとの分散の値に掛けて MeshRefractionMaterial に渡す。 */
   fire: number;
@@ -48,7 +48,7 @@ export const DEFAULT_PARAMS: SceneParams = {
   sun: { amb: 1.5, rot: 0.5, mera: 0.55 },
   // 浜辺: 昼寄り 0.85・波の高さ 0.5・速さ 0.45
   oce: { amb: 0.85, wave: 0.5, speed: 0.45 },
-  // 誕生石: 光量 1（Cycles と同じ明るさ）・分散 0.5（控えめなファイア）
+  // 誕生石: 光量 1（露出 2 倍）・分散 0.5（控えめなファイア）
   jewel: { amb: 1, fire: 0.5 },
 };
 
@@ -59,7 +59,7 @@ export const STORAGE_KEY = "scene-tab";
  * パソコン向けの配置にする画面の幅の下限（CSS の px）。この幅以上で、しかも高さが `COMPACT_MAX_HEIGHT_PX` より高ければパソコン向けにする。
  *
  * app/globals.css の `compact:` / `roomy:`（独自の Tailwind の条件）と同じ値にしておく（48rem = 768px。lib/scene.test.ts が照らし合わせる）。
- * 画面の部品はその CSS の条件で、3D（誕生石シーンで石を上へずらす量など）は `isCompactLayout` で切り替えるので、食い違うとシートと石が重なる。
+ * 画面の部品はその CSS の条件で、3D（誕生石シーンで石を上へずらす量や、月のラベルを石の外と内のどちらに置くか）は `isCompactLayout` で切り替えるので、食い違うとシートと石が重なる。
  * ただし CSS は rem なのでブラウザの文字の大きさの設定で動き、3D 側はキャンバスの大きさで比べる。
  * また CSS の画面の幅はスクロールバーを含み、スマホでは高さがアドレスバーの出し入れで変わる。キャンバスは全画面（<main> いっぱい）なのでほぼ同じ値になるが、
  * 文字の大きさを既定から変えている人などでは、切り替わる大きさが少しずれることがある。
@@ -68,12 +68,12 @@ export const ROOMY_MIN_WIDTH_PX = 768;
 
 /**
  * この高さ（CSS の px）以下の画面は、幅が広くてもスマホ向けの配置にする（30rem = 480px）。
- * スマホの横持ち（例: 844 × 390）は幅が 768px を超えるが、パソコン向けの横並びでは詳細パネルと操作パネルが縦に入りきらないため。
+ * スマホの横持ち（例: 844 × 390）は幅が 768px を超えるが、パソコン向けの横並びでは解説カードと操作パネルが縦に入りきらないため。
  */
 export const COMPACT_MAX_HEIGHT_PX = 480;
 
 /**
- * スマホ向けの配置（下の段を縦に積み、詳細は下のシート、操作パネルは開閉式）にする画面か。
+ * スマホ向けの配置（下の段を縦に積み、解説カードは下のシート、操作パネルは開閉式）にする画面か。
  * app/globals.css の `compact:` と同じ条件（幅が `ROOMY_MIN_WIDTH_PX` 未満、または高さが `COMPACT_MAX_HEIGHT_PX` 以下）。
  *
  * 幅と高さは有限な正の値を渡す前提（NaN を渡すと、その比べは成り立たず false になり、結果がもう一方の値だけで決まる）。

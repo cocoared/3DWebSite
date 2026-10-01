@@ -12,7 +12,7 @@ interface PageErrorProps {
 
 // PageError: ページの受け皿（Next.js の error.tsx）。app/page.tsx から下で起きたエラーを捕まえ、画面が真っ白になる代わりにこれを出す。
 // 3D のキャンバスの中のエラーは components/SceneErrorBoundary.tsx が先に受け止めるので、ここに来るのはそれ以外
-// （タブ・月のボタン・詳細パネルなど UI の部品のエラーや、画面の本体（PortfolioExperience）のプログラム（チャンク）が通信の失敗で読めなかったとき）。
+// （タブ・月のラベル・解説カードなど UI の部品のエラーや、画面の本体（PortfolioExperience）のプログラム（チャンク）が通信の失敗で読めなかったとき）。
 // 同じ階層の app/layout.tsx で起きたエラーは、ここでは受け止められない（それは global-error.tsx の役目。layout は静的で落ちる要素がほぼないので置いていない）。
 // エラーバウンダリはブラウザで動く必要があるので "use client" にする。名前を Error にしないのは、組み込みの Error を隠してしまうため
 export default function PageError({ error, unstable_retry }: PageErrorProps) {

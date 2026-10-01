@@ -1,6 +1,6 @@
 # render_env.py: スタジオの照明を、石の位置から全方向に見渡した 1 枚の HDR 画像（正距円筒図法の環境マップ）に焼く。
 # Web のリアルタイム描画（MeshRefractionMaterial やパールの反射）がこの画像を環境として使うので、
-# Cycles の連番画像と同じ照明で石が光って見える。
+# Blender で組んだスタジオと同じ照明で石が光って見える。
 # build_jewels.py が保存した blender/jewels.blend を開いて、ヘッドレスで実行する:
 #
 #   blender.exe --background blender/jewels.blend --python blender/render_env.py

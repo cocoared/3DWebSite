@@ -4,7 +4,13 @@
 // 長さの単位はミリメートル（Blender で 1 単位 = 1 mm として作った .glb をそのまま使うため）。
 
 import * as THREE from "three";
-import { BIRTHSTONE_IDS, type Birthstone, type BirthstoneId, monthName } from "@/lib/birthstones";
+import {
+  BIRTHSTONE_IDS,
+  BIRTHSTONES,
+  type Birthstone,
+  type BirthstoneId,
+  monthName,
+} from "@/lib/birthstones";
 import { HERO, type HeroContent, isCompactLayout } from "@/lib/scene";
 
 /**
@@ -50,15 +56,22 @@ export const TINT_POWER = 1.6;
  * 石を選んでいる間の、ほかの石の明るさ（1 = ふつう）。暗く沈めて主役の石を浮かび上がらせる。0 にはせず、文字盤の並びは見えるように残す。
  * 環境マップには明るさ 80 の点光源などの非常に明るい光が入っているので、0.2 程度ではトーンマッピングで飽和して暗く見えない。
  * 0.06 にすると、ストリップの映り込みは沈み、点光源の小さな光だけが残る（暗い部屋で主役にだけ光を当てたような見え方）。
+ * 注意（2026-09-30）: ブラウザで見ると、石を選んでもほかの石が暗く沈んでいない（変更前の版でも同じ）。空間と光を見直すときに原因を調べて直す。
  */
 export const DIMMED_BRIGHTNESS = 0.06;
 
-// FOCUS_ELEVATION: 石を選んだときにカメラが石を見下ろす角度（ラジアン）。0.5 ≒ 29°。Cycles の連番（35°）より少し低くして、切子面の側面も見せる
+/**
+ * カメラが目標の姿勢へ移るときの時間の目安（秒）。drei の `CameraControls` の `smoothTime` に渡す。大きいほどゆっくり回り込む。
+ * 解説カードを閉じたあと、月のラベルへフォーカスを返す約束の期限（`FOCUS_PROMISE_MS`）は、これで一覧へ戻りきるのを待てる長さにする（テストで照らし合わせる）。
+ */
+export const CAMERA_SMOOTH_TIME = 0.8;
+
+// FOCUS_ELEVATION: 石を選んだときにカメラが石を見下ろす角度（ラジアン）。0.5 ≒ 29°。少し低めにして、テーブル面だけでなく切子面の側面も見せる
 const FOCUS_ELEVATION = 0.5;
 // FIRE_GAIN: 分散（宝石学の値）を MeshRefractionMaterial の aberrationStrength に直す倍率。
 // 大きいほど虹色のずれが強くなる。ダイヤ（0.044）で分散スライダー 0.5 のとき 0.0176 になり、drei の作例の値（0.01〜0.02）に近い
 const FIRE_GAIN = 0.8;
-// BASE_EXPOSURE: 光量スライダー 1 のときの露出。Cycles の連番を描いた露出（+1 段 = 2 倍）に合わせる
+// BASE_EXPOSURE: 光量スライダー 1 のときの露出（2 倍 = +1 段）。Blender の jewels.blend の露出（+1 段）と同じ
 const BASE_EXPOSURE = 2;
 // SPIN_SETTLE: 選ばれなくなった石が元の向きへ戻る速さ（大きいほど早く戻る。MathUtils.damp の係数）
 const SPIN_SETTLE = 3;
@@ -95,6 +108,44 @@ export function ringPosition(month: number, radius: number = RING_RADIUS_MM): Ve
   const angle = ringAngle(month);
   // 右へ sin、奥へ cos の分だけ進んだ位置（奥は -Z なので符号を反転する）
   return [radius * Math.sin(angle), 0, -radius * Math.cos(angle)];
+}
+
+/**
+ * 解説カードの回すボタンを 1 回押したときに、カメラが石のまわりを回り込む角度（ラジアン）。π/6 = 30°（時計の 1 時間ぶん）で、12 回で 1 周する。
+ * ドラッグできない人（キーボード・スイッチ操作など）が、選んだ石をいろいろな向きから見られるようにするため（WCAG 2.5.7。石を選んでいる間の代わりの手段で、一覧でのドラッグやピンチの拡大には代わりのボタンがない）。大きくすると 1 回で大きく回る。
+ */
+export const ORBIT_STEP_RAD = Math.PI / 6;
+
+/** 視点を石のまわりに回り込ませる指示（解説カードの回すボタン）。同じ向きを続けて押しても届くよう、押すたびに増える番号を付ける。 */
+export interface OrbitRequest {
+  /** -1 で左へ、1 で右へ回り込む（カメラが動く向き）。 */
+  readonly direction: -1 | 1;
+  /** 押された回数。増え続けるだけで、戻さない（戻すと、回し済みの番号と重なった指示が黙って捨てられる）。 */
+  readonly serial: number;
+}
+
+/**
+ * 回すボタンを押したときの、次の指示を作る。番号は前の指示の番号 + 1（前が無ければ 1）。
+ *
+ * @param previous - 前の指示（まだ押されていなければ `null`）
+ * @param direction - -1 で左へ、1 で右へ
+ */
+export function nextOrbitRequest(previous: OrbitRequest | null, direction: -1 | 1): OrbitRequest {
+  // 向きと、1 増やした番号
+  return { direction, serial: (previous?.serial ?? 0) + 1 };
+}
+
+/**
+ * まだ回していない指示なら、視点を回り込ませる角度（ラジアン。方位角の増分）を返す。回し済み・指示なしなら `null`。
+ *
+ * @param request - 今の指示
+ * @param handledSerial - 最後に回した指示の番号（シーンを開いたときは、その時点の指示の番号から始める）
+ */
+export function orbitStepFor(request: OrbitRequest | null, handledSerial: number): number | null {
+  // 指示が無い、または回し済みなら回さない
+  if (!request || request.serial === handledSerial) return null;
+  // 向きの符号を付けた 1 回ぶんの角度
+  return request.direction * ORBIT_STEP_RAD;
 }
 
 /**
@@ -204,21 +255,22 @@ export function fitFov(aspect: number): number {
 }
 
 /**
- * スマホで詳細のシートが開いているとき、描く範囲を上へずらす量を、画面の高さに対する割合で表したもの。
- * 月のボタン列の下の端と、シート（高さは最大 45dvh）の上の端の、ちょうど中間に石が来るように合わせた値（高さ 844px の画面で約 152px）。
+ * スマホで解説カードのシートが開いているとき、描く範囲を上へずらす量を、画面の高さに対する割合で表したもの。
+ * ナビの下の端と、シート（高さは最大 45dvh）の上の端の、ちょうど中間に石が来るように合わせた値（高さ 844px の画面で約 194px）。
+ * 390 × 844・375 × 667・844 × 390 で測ると 0.228〜0.231 だった（どの石も説明文が長く、シートは最大の高さまで伸びる）。
  * シートの中身が短いときや、画面の高さが違うときは、石の位置が少しずれる。大きくすると石がより上に写る。
  */
-export const SHEET_VIEW_SHIFT = 0.18;
+export const SHEET_VIEW_SHIFT = 0.23;
 
 /**
- * 詳細のシートに石が隠れないよう、描く範囲を上へずらす量（px）を求める。画面の大きさか選択が変わるたびに呼ぶ。
+ * 解説カードのシートに石が隠れないよう、描く範囲を上へずらす量（px）を求める。画面の大きさか選択が変わるたびに呼ぶ。
  *
  * スマホ向けの配置（lib/scene.ts の `isCompactLayout`。縦持ちも横持ちも）で、シートが開いているときだけずらす。
- * パソコン向けの配置では詳細は右側のパネルなのでずらさない。
+ * パソコン向けの配置では解説カードは左下にあり、真ん中の石に重ならないのでずらさない。
  *
  * @param width - 画面の幅（CSS の px）
  * @param height - 画面の高さ（CSS の px）
- * @param isSheetOpen - 詳細のシートが開いているか（石を選んでいるか）
+ * @param isSheetOpen - 解説カードのシートが開いているか（石を選んでいるか）
  * @returns 上へずらす量（px、整数）。ずらさないとき、幅や高さが 0 以下・無限大・NaN のときは 0
  */
 export function focusViewShift(width: number, height: number, isSheetOpen: boolean): number {
@@ -226,7 +278,7 @@ export function focusViewShift(width: number, height: number, isSheetOpen: boole
   if (!isSheetOpen) return 0;
   // 幅か高さが使えない値（0 以下・無限大・NaN）ならずらさない。NaN を返すと、カメラの投影が壊れて何も描かれなくなる
   if (!(width > 0 && height > 0 && Number.isFinite(width) && Number.isFinite(height))) return 0;
-  // パソコン向けの配置では、詳細は右側のパネルなのでずらさない
+  // パソコン向けの配置では、解説カードは左下にあり真ん中の石に重ならないので、ずらさない
   if (!isCompactLayout(width, height)) return 0;
   // 画面の高さの一定の割合だけずらす（半端な px で文字や線がにじまないよう整数にする）
   return Math.round(height * SHEET_VIEW_SHIFT);
@@ -331,7 +383,7 @@ export function aberrationFor(dispersion: number, fire: number): number {
 }
 
 /**
- * 光量スライダーから、レンダラーの露出（`toneMappingExposure`）を求める。光量 1 で Cycles の連番と同じ明るさ（2 倍）。
+ * 光量スライダーから、レンダラーの露出（`toneMappingExposure`）を求める。光量 1 で 2 倍（Blender の jewels.blend の露出 +1 段と同じ）。
  *
  * @param amb - 光量スライダーの値（0〜3。負の値は 0 にする）
  */
@@ -518,24 +570,30 @@ export function applyViewShift(
 }
 
 /**
- * 月のボタンを押したときの、次の選択。選んでいる石の月をもう一度押すと選択を外す（`aria-pressed` の切り替えボタンと同じ動き）。
+ * 前後の月の誕生石。12 月の次は 1 月、1 月の前は 12 月に回り込む（解説カードの ‹ › ボタン）。
  *
- * 3D の石をクリックしたときはこれを使わず、いつもその石を選ぶ（寄っている石に触れて回そうとしたときに、全体へ戻ってしまわないように）。
- *
- * @param current - 今選んでいる石（選んでいなければ `null`）
- * @param pressed - 押された月の石
- * @returns 次に選ぶ石。選択を外すときは `null`
+ * @param stone - 今の石
+ * @param step - `-1` で前の月、`1` で次の月
+ * @returns 前後の月の石（`BIRTHSTONES` の中の同じオブジェクト）
+ * @throws {RangeError} 石の月が 1〜12 の整数でないとき（壊れたデータで、別の石を黙って返さないため）
  */
-export function toggleStone(
-  current: BirthstoneId | null,
-  pressed: BirthstoneId,
-): BirthstoneId | null {
-  // 同じ石なら外し、違う石（または未選択）なら押された月の石にする
-  return current === pressed ? null : pressed;
+export function adjacentStone(stone: Birthstone, step: -1 | 1): Birthstone {
+  // 石の数（12）
+  const count = BIRTHSTONES.length;
+  // 月が 1〜12 の整数でなければ、並びの位置を求められない
+  if (!Number.isInteger(stone.month) || stone.month < 1 || stone.month > count) {
+    // 範囲の外であることを知らせる
+    throw new RangeError(`月は 1〜${count} の整数です: ${stone.month}`);
+  }
+  // 並びの位置（BIRTHSTONES は 1 月から順に並ぶ。lib/birthstones.ts の parseBirthstones が確かめている）を step だけ進め、端で回り込ませる
+  const index = (stone.month - 1 + step + count) % count;
+  // その位置の石を返す
+  return BIRTHSTONES[index];
 }
 
 /**
- * 石を選んだときに、左下の見出し（SceneHero）へ出す文言を作る。
+ * 石を選んだときの文言を作る。解説カード（`JewelCard`）の月のラベル・名前・石言葉の文・操作のヒントと、
+ * 読み上げ専用の知らせ（`PortfolioExperience` の `role="status"`）に使う。
  */
 export function jewelHero(stone: Birthstone): HeroContent {
   // 2 桁の月番号（例: 04）
