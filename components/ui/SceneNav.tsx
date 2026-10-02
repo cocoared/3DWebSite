@@ -15,9 +15,11 @@ export default function SceneNav({ active, onSelect }: SceneNavProps) {
     <header className="flex items-center justify-center">
       {/* tabs: 中央のシーン切り替えボタンを丸いガラス風バーにまとめる。 */}
       {/* aria-label: 誕生石シーンでは月のラベル（MonthLabels）も <nav> になるので、読み上げで 2 つを区別できるよう名前を付ける */}
+      {/* 地の暗さ（不透明度 0.8）: 後ろが真っ白でも、選んでいないタブの文字（paper/60）とのコントラスト比が 4.5:1 を超える濃さ（計算で約 4.7:1）。
+          誕生石シーンの背景は真っ白なので、このバーの真後ろが白になる（0.55 では足りない） */}
       <nav
         aria-label="シーンを選ぶ"
-        className="pointer-events-auto flex gap-1.25 rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] p-1.25 backdrop-blur-[14px]"
+        className="pointer-events-auto flex gap-1.25 rounded-full border border-white/15 bg-[rgba(10,12,20,0.8)] p-1.25 backdrop-blur-[14px]"
       >
         {TABS.map((tab) => {
           // isActive: このタブが現在選択中か。

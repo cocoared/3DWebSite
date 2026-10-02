@@ -22,7 +22,13 @@ import {
   type SceneTab,
   STORAGE_KEY,
 } from "@/lib/scene";
-import { jewelHero, nextOrbitRequest, type OrbitRequest, overviewHero } from "@/lib/scenes/jewels";
+import { jewelHero, overviewHero } from "@/lib/scenes/jewels";
+
+// CANVAS_DPR: キャンバスの解像度の倍率（デバイスピクセル比）の範囲 [下限, 上限]。高精細な画面でも 1.6 倍までにして、描くピクセル数を抑える
+const CANVAS_DPR: [number, number] = [1, 1.6];
+// JEWELS_DPR: 誕生石シーンだけの解像度の倍率の範囲。屈折の石は 1 ピクセルごとに光線を赤・緑・青の 3 回ずつ追いかけて重いので、
+// 上限を 1.25 倍に下げる（1.6 倍より描くピクセル数が約 4 割少ない）。大きくすると石の輪郭が細かくなるが、スマホで遅くなる
+const JEWELS_DPR: [number, number] = [1, 1.25];
 
 // readSavedTab: 前回開いていたシーンを localStorage から復元する(なければ太陽)。
 // このコンポーネントは page 側で ssr:false 指定のためクライアントでのみ実行され、localStorage を安全に読める。
@@ -60,10 +66,6 @@ export default function PortfolioExperience() {
   // isJewelsReady: 誕生石シーンの 3D が読み込まれて表示できているか（JewelsScene の onReady が知らせる）。
   // true の間だけ月のラベルを描く（読み込み中やエラーのときに、中身の無い「誕生月を選ぶ」ナビを読み上げさせないため）
   const [isJewelsReady, setIsJewelsReady] = useState(false);
-  // orbitRequest: 解説カードの回すボタンからの、視点を回り込ませる指示（押すたびに番号が増える。JewelsScene が 1 回ぶん回す）。
-  // 番号は戻さない（タブを替えても消さない）。JewelsScene は開いたときの番号を回し済みとして始めるので、古い指示で回ることはない
-  const [orbitRequest, setOrbitRequest] = useState<OrbitRequest | null>(null);
-
   // selectTab: タブを切り替え、選択を localStorage に保存する。
   const selectTab = (next: SceneTab) => {
     // 表示シーンを更新
@@ -107,12 +109,6 @@ export default function PortfolioExperience() {
     },
     [labelHandles],
   );
-
-  // rotateView: 解説カードの回すボタンで、視点を石のまわりに回り込ませる（-1 = 左へ、1 = 右へ）。押すたびに番号を 1 増やした新しい指示を作る
-  const rotateView = useCallback((direction: -1 | 1) => {
-    // 前の指示の番号に 1 を足す（同じ向きを続けて押しても、別の指示として届くように。lib/scenes/jewels.ts の nextOrbitRequest）
-    setOrbitRequest((previous) => nextOrbitRequest(previous, direction));
-  }, []);
 
   // closeJewel: 解説カードを閉じて文字盤の一覧に戻る（× ボタンと Esc キー）。
   // 閉じる石の月を使うので、選んでいる石が替わったら作り直す
@@ -177,6 +173,9 @@ export default function PortfolioExperience() {
   const overview = tab === "jewel" ? overviewHero(isReturnFromStone) : HERO[tab];
   // hero: 左下の見出しの文言と読み上げの知らせ。石を選んでいればその石の見出し、そうでなければ上の見出し
   const hero = cardStone ? jewelHero(cardStone) : overview;
+  // isOnLight: 真っ白な背景が出ているか（誕生石シーンの 3D が表示できている間だけ。読み込み中とエラーのときは、まだ暗い下地の bg-ink が見えている）。
+  // true の間は、見出しを濃い色の文字にし、周辺を暗くする飾りと、スマホ向けの暗いグラデーションを敷かない
+  const isOnLight = tab === "jewel" && isJewelsReady;
 
   return (
     // main: ページの本文（ランドマーク）。読み上げソフトで「本文へ移動」したときの行き先になる。
@@ -190,7 +189,8 @@ export default function PortfolioExperience() {
         {/* [&_canvas]:… は R3F が内部生成する <canvas> を層いっぱいに広げ、タッチのスクロール干渉を防ぐ指定。 */}
         <Canvas
           className="absolute inset-0 block h-full w-full cursor-grab touch-none active:cursor-grabbing [&_canvas]:block [&_canvas]:h-full! [&_canvas]:w-full! [&_canvas]:touch-none"
-          dpr={[1, 1.6]}
+          // 解像度の倍率（誕生石シーンだけ上限を下げる。タブを替えたときに切り替わる）
+          dpr={tab === "jewel" ? JEWELS_DPR : CANVAS_DPR}
           gl={{ antialias: true, alpha: true }}
           linear
           flat
@@ -208,25 +208,27 @@ export default function PortfolioExperience() {
                 onSelect={selectJewel}
                 labels={labelHandles}
                 onReady={setIsJewelsReady}
-                orbitRequest={orbitRequest}
               />
             </Suspense>
           )}
         </Canvas>
       </SceneErrorBoundary>
 
-      {/* vignette: 画面周辺を暗く落として中央へ視線を集める、操作を透過するオーバーレイ。 */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(125%_95%_at_50%_42%,transparent_55%,rgba(0,0,0,0.36)_100%)]" />
+      {/* vignette: 画面周辺を暗く落として中央へ視線を集める、操作を透過するオーバーレイ。真っ白な背景（誕生石シーン）では、白のままにするため敷かない */}
+      {!isOnLight && (
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(125%_95%_at_50%_42%,transparent_55%,rgba(0,0,0,0.36)_100%)]" />
+      )}
 
-      {/* scrim: スマホ向けの配置だけ、下から暗くなるグラデーションを敷き、見出しの白い文字を読みやすくする。
-          スマホでは太陽などの明るい 3D が見出しの真後ろに来るため（パソコン向けの配置では見出しが左下の暗い隅にあるので敷かない）。操作は透過する。
-          太陽・浜辺（下の三項演算子の後ろの値）: 画面の全体に、下の端で黒 80%、真ん中で 60%、上の端で透明。
+      {/* scrim: スマホ向けの配置だけ、下から濃くなるグラデーションを敷き、見出しの文字を読みやすくする。
+          スマホでは太陽や石などの 3D が見出しの真後ろに来るため（パソコン向けの配置では見出しが左下の隅にあるので敷かない）。操作は透過する。
+          暗い背景（isOnLight が false の値。太陽・浜辺と、誕生石の読み込み中）: 画面の全体に、下の端で黒 80%、真ん中で 60%、上の端で透明。
           320〜390px 幅で測って、いちばん小さい文字でも 5.7:1 以上（WCAG AA は 4.5:1）になる濃さ。
-          誕生石（三項演算子の前側の値）: 背景が暗いので、画面の下半分だけに弱く敷く（全体に敷くと、文字盤の石の色まで暗く沈んでしまうため）。
-          狭い画面でタイトルの後ろに白いパールが来ても読めるようにする */}
+          真っ白な背景（isOnLight が true の値。誕生石）: 見出しは濃い色の文字なので、画面の下半分だけに白を敷き（下の端で 85%、下から 1/4 の高さで 65%）、
+          見出しの後ろに色の濃い石が来ても読めるようにする。後ろが真っ黒でも、見出しのいちばん上の小さな文字（eyebrow。390 × 844 の画面で白 約 56% の所）が計算で約 6:1 になる濃さ（80% / 50% では約 4:1 だった）
+          （全体に敷くと、文字盤の石まで白くかすむため） */}
       <div
         className={`pointer-events-none absolute inset-x-0 bottom-0 roomy:hidden bg-linear-to-t to-transparent ${
-          tab === "jewel" ? "h-1/2 from-black/70 via-black/40" : "h-full from-black/80 via-black/60"
+          isOnLight ? "h-1/2 from-white/85 via-white/65" : "h-full from-black/80 via-black/60"
         }`}
       />
 
@@ -261,10 +263,9 @@ export default function PortfolioExperience() {
               stone={cardStone}
               onSelect={selectJewel}
               onClose={closeJewel}
-              onRotate={rotateView}
             />
           ) : (
-            <SceneHero content={hero} headingRef={heroHeading} />
+            <SceneHero content={hero} headingRef={heroHeading} isOnLight={isOnLight} />
           )}
           {/* 右下（スマホ向けの配置では下）: 操作パネル。スマホ向けの配置では幅いっぱいに広げ（items-stretch）、パソコン向けの配置では右に寄せる */}
           <div className="flex roomy:max-h-full min-h-0 flex-col roomy:items-end items-stretch">

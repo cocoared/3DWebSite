@@ -5,7 +5,7 @@ import {
   type Birthstone,
   type BirthstoneId,
   birthstoneSpecs,
-  monthShortLabel,
+  monthJaLabel,
 } from "@/lib/birthstones";
 import { adjacentStone, jewelHero } from "@/lib/scenes/jewels";
 
@@ -17,8 +17,6 @@ interface JewelCardProps {
   onSelect: (id: BirthstoneId) => void;
   /** × ボタンが押されたときに呼ぶ（文字盤の一覧に戻す）。 */
   onClose: () => void;
-  /** 回すボタンが押されたときに、向き（-1 = 左へ、1 = 右へ。視点が石のまわりを回り込む向き）で呼ぶ。ドラッグできない人が石をいろいろな向きから見るため。 */
-  onRotate: (direction: -1 | 1) => void;
   /** カードの `<section>` 要素を受け取る ref。閉じるときに、フォーカスがカードの中にあるかを呼び出し側が調べるために使う。 */
   ref?: Ref<HTMLElement>;
 }
@@ -27,19 +25,9 @@ interface JewelCardProps {
 const NAV_BUTTON_CLASS =
   "flex min-h-7 cursor-pointer items-center gap-1.5 rounded-full border border-white/15 bg-transparent px-3 py-1 font-mono text-[11px] text-paper/85 uppercase tracking-[0.12em] transition-colors hover:text-white focus-visible:outline-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2";
 
-// ROTATE_BUTTON_CLASS: 視点を回すボタンの見た目（丸い 28px。× ボタンと同じ形）。キーボードで選んだときは石の色の枠を出す
-const ROTATE_BUTTON_CLASS =
-  "flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-transparent text-paper/85 text-sm transition-colors hover:text-white focus-visible:outline-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2";
-
-// twoDigits: 月を 2 桁にする（例: 3 → "03"）
-function twoDigits(month: number): string {
-  // 1 桁なら頭に 0 を付ける
-  return String(month).padStart(2, "0");
-}
-
 // JewelCard: 石を選んだときに、左下（スマホ向けの配置では画面の下のシート）へ出す解説カード。
 // 月と名前・石言葉・説明・特徴の表（折りたたみ）・前後の月のボタンを 1 枚にまとめる
-export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: JewelCardProps) {
+export default function JewelCard({ stone, onSelect, onClose, ref }: JewelCardProps) {
   // heading: 名前の見出し（カードが出たときに、ここへフォーカスを移す）
   const heading = useRef<HTMLHeadingElement>(null);
   // titleId: 見出しの id（カードの名前として aria-labelledby から指す）
@@ -69,6 +57,7 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
 
   return (
     // card: 半透明のガラス風のカード。高さに収まらないときは中だけスクロールする。
+    // 地の暗さ（不透明度 0.88）: 誕生石シーンの背景は真っ白なので、後ろが白でも、いちばん薄い文字（特徴の見出し、opacity-55）が 4.5:1 を超える濃さにする（0.66 では約 3:1）。
     // スマホ向けの配置（compact:）: 幅いっぱい・高さは最大で画面の 45%（45dvh）のシート。見出しの行を上に固定する。キーボードで移った先が固定の行に隠れないよう、行の高さ（約 54px。高さ 480px 以下では約 44px）より少し大きい 56px / 48px の scroll-pt をあける。
     // パソコン向けの配置（roomy:）: 左下に幅 340px。上はナビの下まで伸ばせて、はみ出す分は中でスクロールする。
     // 高さ 256px 未満の画面（tiny:）: カードの中ではスクロールさせず、UI の層ごとスクロールする（PortfolioExperience の tiny:overflow-y-auto）
@@ -76,7 +65,7 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
       ref={ref}
       aria-labelledby={titleId}
       style={accentStyle}
-      className="pointer-events-auto flex max-h-[45dvh] roomy:max-h-full tiny:max-h-none min-h-0 roomy:w-85 w-full compact:scroll-pt-14 short:scroll-pt-12 flex-col tiny:overflow-visible overflow-y-auto rounded-[18px] border border-white/15 bg-[rgba(9,10,16,0.66)] px-5 pt-0 roomy:pt-4.5 pb-4 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
+      className="pointer-events-auto flex max-h-[45dvh] roomy:max-h-full tiny:max-h-none min-h-0 roomy:w-85 w-full compact:scroll-pt-14 short:scroll-pt-12 flex-col tiny:overflow-visible overflow-y-auto rounded-[18px] border border-white/15 bg-[rgba(9,10,16,0.88)] px-5 pt-0 roomy:pt-4.5 pb-4 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg [scrollbar-color:rgba(255,255,255,0.25)_transparent] [scrollbar-width:thin]"
     >
       {/* head: 月のラベルと閉じるボタンの行。
           スマホ向けの配置では上の端に固定し、× ボタンをいつでも押せるようにする（スマホには Esc キーがないため）。
@@ -84,13 +73,14 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
           高さ 256px 未満の画面（tiny:）では固定しない（tiny:static）。そこではカードではなく UI の層ごとスクロールするので、固定すると、
           キーボードで戻った先のボタンがこの行の下に隠れてしまう（WCAG 2.4.11） */}
       <div className="tiny:static compact:sticky compact:top-0 compact:z-10 compact:-mx-5 mb-2 flex items-center justify-between compact:bg-[rgb(12,13,20)] compact:px-5 compact:pt-4.5 short:pt-2 compact:pb-2 font-mono text-[11px] uppercase tracking-[0.26em]">
-        {/* 月のラベル（例: 04 — APRIL）。点の色は石の色。英語として読み上げさせる */}
-        <span lang="en" className="flex items-center gap-2 opacity-85">
+        {/* 月のラベル（例: 4月。2026-10-02 のユーザーの判断で、英語の月名から数字の月にした）。点の色は石の色 */}
+        <span className="flex items-center gap-2 opacity-85">
           {/* 石の色の点（飾りなので読み上げない） */}
           <span aria-hidden="true" className="h-1.75 w-1.75 rounded-full bg-(--accent)" />
-          {hero.eyebrow}
+          {/* 月の文字は和文の書体（等幅の英字の書体には漢字が無く、OS の等幅の書体に置き換わって読みにくいため）。字間は広げない（「4月」「12月」が 1 語に見えるように）。12px */}
+          <span className="font-jp text-xs tracking-normal">{hero.eyebrow}</span>
         </span>
-        {/* 閉じて一覧に戻るボタン（Esc キーでも戻れる） */}
+        {/* 閉じて一覧に戻るボタン（Esc キーでも戻れる）。枠の無い × だけを見せる */}
         <button
           // type="button": フォームの送信ボタンにならないよう明示する
           type="button"
@@ -98,8 +88,9 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
           onClick={onClose}
           // 記号だけなので、読み上げの名前を付ける
           aria-label="閉じて文字盤に戻る"
-          // 丸い小さなボタン（28px）。キーボードで選んだときは石の色の枠を出す
-          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-transparent text-paper/75 text-sm transition-colors hover:text-white focus-visible:outline-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2"
+          // 枠も背景も無い × の記号だけ。押せる的は 28px 四方のまま保つ（記号より広い範囲で押せる）。
+          // 記号だけでも見つけやすいよう、文字は 18px にする。キーボードで選んだときは石の色の枠を出す
+          className="-mr-1.5 flex h-7 w-7 cursor-pointer items-center justify-center border-0 bg-transparent text-lg text-paper/75 leading-none transition-colors hover:text-white focus-visible:outline-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           ×
         </button>
@@ -135,10 +126,11 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
         // 区切り線の下に、三角と「特徴」を並べる。押せる的は高さ 28px 以上。キーボードで選んだときは石の色の枠を出す
         className="mt-3 flex min-h-7 w-full cursor-pointer items-center gap-2 border-0 border-white/10 border-t bg-transparent pt-3 text-left font-jp text-[13px] text-paper focus-visible:outline-(--accent) focus-visible:outline-2 focus-visible:outline-offset-2"
       >
-        {/* 開閉の向きを示す三角（開いていると下向き）。飾りなので読み上げない。動きを減らす設定では回転の動きを止める */}
+        {/* 開閉の向きを示す三角（開いていると下向き）。飾りなので読み上げない。動きを減らす設定では回転の動きを止める。
+            文字は 16px（▸ は字の枠に対して小さく描かれる記号なので、隣の「特徴」（13px）より大きくして、押せることがわかる大きさにする） */}
         <span
           aria-hidden="true"
-          className={`text-[10px] transition-transform motion-reduce:transition-none ${isSpecsOpen ? "rotate-90" : ""}`}
+          className={`text-base leading-none transition-transform motion-reduce:transition-none ${isSpecsOpen ? "rotate-90" : ""}`}
         >
           ▸
         </span>
@@ -160,69 +152,27 @@ export default function JewelCard({ stone, onSelect, onClose, onRotate, ref }: J
           </div>
         ))}
       </dl>
-      {/* 前後の月へ移るボタンと、視点を回すボタン。カードは作り直さないので、押したボタンにフォーカスが残る */}
+      {/* 前後の月へ移るボタン。カードは作り直さないので、押したボタンにフォーカスが残る。
+          カメラは文字盤の外側から中心を向いて石を見るので、時計回りの次の月の石は画面の左に、前の月の石は右にある。
+          押したときに視点が動く向きとそろうよう、次の月を左（‹）、前の月を右（›）に置く（2026-10-02 のユーザーの判断）。
+          読み上げとキーボードの順も、見た目と同じ左 → 右（次の月 → 前の月）にする */}
       <div className="mt-3 flex items-center justify-between gap-2 border-white/10 border-t pt-3">
-        {/* 前の月（例: ‹ 03 MAR）。読み上げの名前は見えている文字（03 MAR）で始める（WCAG 2.5.3） */}
-        <button type="button" onClick={() => onSelect(previous.id)} className={NAV_BUTTON_CLASS}>
-          {/* 向きの記号（飾りなので読み上げない） */}
-          <span aria-hidden="true">‹</span>
-          {/* 見えている月。英語として読み上げさせる */}
-          <span lang="en">
-            {twoDigits(previous.month)} {monthShortLabel(previous.month)}
-          </span>
-          {/* 読み上げだけに足す説明 */}
-          <span className="sr-only">
-            {" "}
-            前の月、{previous.month}月 {previous.nameJa}
-          </span>
-        </button>
-        {/* 視点を回すボタン 2 つ（ドラッグの代わり。WCAG 2.5.7）。1 回で ORBIT_STEP_RAD（lib/scenes/jewels.ts）だけ回り込む */}
-        <div className="flex items-center gap-1.5">
-          {/* 左へ回す。記号だけなので、読み上げの名前を付ける */}
-          <button
-            // type="button": フォームの送信ボタンにならないよう明示する
-            type="button"
-            // 押したら左へ回り込む
-            onClick={() => onRotate(-1)}
-            // 読み上げの名前
-            aria-label="視点を左へ回す"
-            // マウスを乗せたときにも名前を出す（記号だけでは何のボタンかわからないため）
-            title="視点を左へ回す"
-            // 丸い小さなボタン
-            className={ROTATE_BUTTON_CLASS}
-          >
-            {/* 左回りの矢印（名前は aria-label が持つので読み上げない） */}
-            <span aria-hidden="true">↶</span>
-          </button>
-          {/* 右へ回す */}
-          <button
-            // type="button": フォームの送信ボタンにならないよう明示する
-            type="button"
-            // 押したら右へ回り込む
-            onClick={() => onRotate(1)}
-            // 読み上げの名前
-            aria-label="視点を右へ回す"
-            // マウスを乗せたときにも名前を出す
-            title="視点を右へ回す"
-            // 丸い小さなボタン
-            className={ROTATE_BUTTON_CLASS}
-          >
-            {/* 右回りの矢印（名前は aria-label が持つので読み上げない） */}
-            <span aria-hidden="true">↷</span>
-          </button>
-        </div>
-        {/* 次の月（例: 05 MAY ›） */}
+        {/* 次の月（例: ‹ 5月）。読み上げの名前は見えている文字（5月）で始める（WCAG 2.5.3） */}
         <button type="button" onClick={() => onSelect(next.id)} className={NAV_BUTTON_CLASS}>
-          {/* 見えている月。英語として読み上げさせる */}
-          <span lang="en">
-            {twoDigits(next.month)} {monthShortLabel(next.month)}
-          </span>
-          {/* 読み上げだけに足す説明 */}
-          <span className="sr-only">
-            {" "}
-            次の月、{next.month}月 {next.nameJa}
-          </span>
-          {/* 向きの記号（飾りなので読み上げない） */}
+          {/* 向きの記号（視点が左へ動く。飾りなので読み上げない） */}
+          <span aria-hidden="true">‹</span>
+          {/* 見えている月（和文の書体・字間なし・12px。上付きの月のラベルと同じ理由） */}
+          <span className="font-jp text-xs tracking-normal">{monthJaLabel(next.month)}</span>
+          {/* 読み上げだけに足す説明（月は見えている文字が先に読まれるので、繰り返さない） */}
+          <span className="sr-only"> 次の月、{next.nameJa}</span>
+        </button>
+        {/* 前の月（例: 3月 ›） */}
+        <button type="button" onClick={() => onSelect(previous.id)} className={NAV_BUTTON_CLASS}>
+          {/* 見えている月（和文の書体・字間なし・12px。上付きの月のラベルと同じ理由） */}
+          <span className="font-jp text-xs tracking-normal">{monthJaLabel(previous.month)}</span>
+          {/* 読み上げだけに足す説明（月は見えている文字が先に読まれるので、繰り返さない） */}
+          <span className="sr-only"> 前の月、{previous.nameJa}</span>
+          {/* 向きの記号（視点が右へ動く。飾りなので読み上げない） */}
           <span aria-hidden="true">›</span>
         </button>
       </div>
