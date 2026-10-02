@@ -2,21 +2,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
 import { describe, expect, test, vi } from "vitest";
-import { BIRTHSTONE_IDS, type BirthstoneId, birthstoneById } from "@/lib/birthstones";
+import { BIRTHSTONE_IDS, BIRTHSTONES, type BirthstoneId, birthstoneById } from "@/lib/birthstones";
 import { COMPACT_MAX_HEIGHT_PX, HERO } from "@/lib/scene";
 import {
   aberrationFor,
   adjacentStone,
-  advanceBrightness,
   advanceLift,
+  advanceOpacity,
   advanceSpin,
   advanceViewShift,
-  applyStoneBrightness,
+  applyStoneOpacity,
   applyViewShift,
   BASE_FOV_DEG,
-  DIMMED_BRIGHTNESS,
+  CAMERA_SMOOTH_TIME,
+  castsShadow,
   disposeRefractionBvh,
   exposureFor,
+  FADED_OPACITY,
+  FIRE_GAIN,
   FOCUS_DISTANCE_FACTOR,
   FOV_REFERENCE_ASPECT,
   fitFov,
@@ -24,26 +27,25 @@ import {
   focusViewShift,
   geometryBounds,
   HOVER_LIFT_MM,
+  isFadedStone,
   JEWELS_ENV_URL,
   JEWELS_GLB_URL,
   jewelHero,
   MAX_FOV_DEG,
   MIN_ABERRATION,
   nearestAngle,
-  nextOrbitRequest,
-  ORBIT_STEP_RAD,
   OVERVIEW_POSE,
   orbitAngles,
-  orbitStepFor,
   overviewHero,
   pickStoneGeometries,
   RING_RADIUS_MM,
   ringAngle,
   ringPosition,
+  SHADOW_RETURN_OPACITY,
   SHEET_VIEW_SHIFT,
   SPIN_SPEED,
   STONE_LIFT_MM,
-  stoneBrightness,
+  stoneOpacity,
   stonePlacement,
   stoneYaw,
   TINT_POWER,
@@ -305,25 +307,91 @@ describe("aberrationFor / exposureFor / tintFromColor", () => {
   // 分散スライダーが 0 でも、MeshRefractionMaterial には 0 を渡さない（0 と正の値を行き来すると drei の実装で屈折が壊れるため）
   test("分散スライダーが 0 のときも MIN_ABERRATION（正の値）になる", () => {
     // Assert: 最小値になる
-    expect(aberrationFor(0.044, 0)).toBe(MIN_ABERRATION);
+    expect(aberrationFor(0.044, 2.42, 0)).toBe(MIN_ABERRATION);
     // Assert: 最小値は正
     expect(MIN_ABERRATION).toBeGreaterThan(0);
+  });
+
+  // drei は赤を「屈折率 × (1 - 値)」、青を「屈折率 × (1 + 値)」で計算する（fastChroma を使わないとき）。
+  // その赤と青の屈折率の差が、石の分散（宝石学の B–G 間の屈折率の差）を FIRE_GAIN 倍・スライダー倍したものになる
+  test("赤と青の屈折率の差が、石の分散 × スライダー × FIRE_GAIN になる", () => {
+    // Arrange: ダイヤ（屈折率 2.42・分散 0.044）、スライダー 0.5
+    const ior = 2.42;
+    // Act: 色のずれ
+    const strength = aberrationFor(0.044, ior, 0.5);
+    // Assert: 青と赤の屈折率の差
+    expect(ior * (1 + strength) - ior * (1 - strength)).toBeCloseTo(0.044 * 0.5 * FIRE_GAIN, 10);
+  });
+
+  // 実物の分散のままでは、画面の上で虹色がほとんど見えない。スライダーを上げたときは実物より強めて見せる
+  test("FIRE_GAIN は 1 より大きい（スライダー 1 で実物より強い虹色）", () => {
+    // Assert: 実物より強める
+    expect(FIRE_GAIN).toBeGreaterThan(1);
   });
 
   // スライダーを上げるほど色のずれが強くなり、分散の大きい石ほど強い
   test("分散スライダーと石の分散が大きいほど値が大きい", () => {
     // Assert: スライダーを上げると大きくなる
-    expect(aberrationFor(0.044, 1)).toBeGreaterThan(aberrationFor(0.044, 0.5));
-    // Assert: ダイヤ（0.044）はアメジスト（0.013）より大きい
-    expect(aberrationFor(0.044, 1)).toBeGreaterThan(aberrationFor(0.013, 1));
+    expect(aberrationFor(0.044, 2.42, 1)).toBeGreaterThan(aberrationFor(0.044, 2.42, 0.5));
+    // Assert: 屈折率が同じなら、分散 0.044 は 0.013 より大きい
+    expect(aberrationFor(0.044, 1.54, 1)).toBeGreaterThan(aberrationFor(0.013, 1.54, 1));
   });
 
   // 範囲外の値はスライダーの範囲（0〜1）に収める
   test("分散スライダーの値は 0〜1 に収める", () => {
     // Assert: 1 を超えても 1 と同じ
-    expect(aberrationFor(0.044, 5)).toBe(aberrationFor(0.044, 1));
+    expect(aberrationFor(0.044, 2.42, 5)).toBe(aberrationFor(0.044, 2.42, 1));
     // Assert: 負の値は 0 と同じ（最小値になり、負の値は渡さない）
-    expect(aberrationFor(0.044, -5)).toBe(MIN_ABERRATION);
+    expect(aberrationFor(0.044, 2.42, -5)).toBe(MIN_ABERRATION);
+  });
+
+  // 屈折率が大きいほど、同じ色の広がりに必要な値は小さい（差 = 2 × 屈折率 × 値 なので、屈折率で割っている）
+  test("分散とスライダーが同じなら、屈折率の小さい石ほど値が大きい", () => {
+    // Assert: 屈折率 1.54 は 2.42 より大きい値になる
+    expect(aberrationFor(0.044, 1.54, 0.5)).toBeGreaterThan(aberrationFor(0.044, 2.42, 0.5));
+  });
+
+  // 12 か月の実際の石では、どのスライダーの値でも、drei に渡せる範囲（有限・下限以上・0.1 未満）に収まる。
+  // 0.1 未満なら、赤と青の屈折率は元の ±10% 以内（いちばん分散の大きいダイヤでもスライダー 1 で約 0.036）
+  test.each([0, 0.5, 1])(
+    "分散スライダー %f で、12 石とも有限で MIN_ABERRATION 以上、0.1 未満",
+    (fire) => {
+      // 12 石ぶん
+      for (const stone of BIRTHSTONES) {
+        // Act: 色のずれ
+        const strength = aberrationFor(stone.dispersion, stone.ior, fire);
+        // Assert: 有限
+        expect(Number.isFinite(strength)).toBe(true);
+        // Assert: 下限以上
+        expect(strength).toBeGreaterThanOrEqual(MIN_ABERRATION);
+        // Assert: 屈折率の ±10% 以内（大きすぎる値は虹色が強すぎて石の形がわからなくなる）
+        expect(strength).toBeLessThan(0.1);
+      }
+    },
+  );
+
+  // 数でない値や、1 未満の屈折率（空気より曲がらない物）が来ても、壊れた値を drei に渡さない
+  test.each([
+    ["スライダーが NaN", 0.044, 2.42, Number.NaN],
+    ["屈折率が NaN", 0.044, Number.NaN, 0.5],
+    ["屈折率が 0", 0.044, 0, 0.5],
+    ["屈折率が 1 未満", 0.044, 0.9, 0.5],
+    ["分散が NaN", Number.NaN, 2.42, 0.5],
+  ])("%s なら MIN_ABERRATION にする", (_, dispersion, ior, fire) => {
+    // Assert: 下限の値
+    expect(aberrationFor(dispersion, ior, fire)).toBe(MIN_ABERRATION);
+  });
+
+  // 屈折率がちょうど 1（空気と同じ）は受け付ける境目
+  test("屈折率がちょうど 1 なら、式どおりの値を返す", () => {
+    // Assert: 分散 0.044・スライダー 1 で、差 0.044 × FIRE_GAIN を 2 × 1 で割った値
+    expect(aberrationFor(0.044, 1, 1)).toBeCloseTo((0.044 * FIRE_GAIN) / 2, 10);
+  });
+
+  // パールのように分散が 0 の石でも、0 は渡さない
+  test("分散が 0 の石でも MIN_ABERRATION になる", () => {
+    // Assert: 最小値
+    expect(aberrationFor(0, 1.53, 1)).toBe(MIN_ABERRATION);
   });
 
   // 光量スライダーは露出の倍率。Blender の jewels.blend の露出（+1 段 = 2 倍）に合わせた基準にかける
@@ -381,114 +449,185 @@ describe("aberrationFor / exposureFor / tintFromColor", () => {
   });
 });
 
-// stoneBrightness / advanceBrightness: 石を選んでいる間は、ほかの石を暗く沈めて主役の石を浮かび上がらせる
-describe("stoneBrightness / advanceBrightness", () => {
-  // 何も選んでいなければ、全部の石がふつうの明るさ
+// stoneOpacity / advanceOpacity / applyStoneOpacity: 石を選んでいる間は、ほかの石を白い背景へ溶かすように薄くして、主役の石を浮かび上がらせる
+describe("stoneOpacity / advanceOpacity / applyStoneOpacity", () => {
+  // 何も選んでいなければ、全部の石が不透明
   test("何も選んでいないときは 1", () => {
-    // Assert: ふつうの明るさ
-    expect(stoneBrightness("ruby", null)).toBe(1);
+    // Assert: 不透明
+    expect(stoneOpacity("ruby", null)).toBe(1);
   });
 
-  // 選んだ石はふつうの明るさ、それ以外は暗くする
-  test("選んだ石は 1、ほかの石は DIMMED_BRIGHTNESS", () => {
+  // 選んだ石は不透明、それ以外は薄くする
+  test("選んだ石は 1、ほかの石は FADED_OPACITY", () => {
     // Assert: 選んだ石
-    expect(stoneBrightness("ruby", "ruby")).toBe(1);
+    expect(stoneOpacity("ruby", "ruby")).toBe(1);
     // Assert: ほかの石
-    expect(stoneBrightness("pearl", "ruby")).toBe(DIMMED_BRIGHTNESS);
-    // Assert: 暗くした明るさは 0 より大きく 1 より小さい（真っ黒にはせず、文字盤の並びは残す）
-    expect(DIMMED_BRIGHTNESS).toBeGreaterThan(0);
-    // Assert: 1 より小さい
-    expect(DIMMED_BRIGHTNESS).toBeLessThan(1);
+    expect(stoneOpacity("pearl", "ruby")).toBe(FADED_OPACITY);
   });
 
-  // 屈折のマテリアル（色の uniform を持つ）は、元の色 × 明るさにする
-  test("applyStoneBrightness は色を元の色 × 明るさにし、元の色は書き換えない", () => {
-    // Arrange: 元の色と、色を持つ偽物のマテリアル
-    const base = new THREE.Color(1, 0.5, 0.25);
-    // Arrange: マテリアル（最初は白）
-    const material = { color: new THREE.Color(1, 1, 1) };
-    // Act: 半分の明るさにする
-    applyStoneBrightness(material, base, 0.5);
-    // Assert: 色が半分になっている
-    expect(material.color.toArray()).toEqual([0.5, 0.25, 0.125]);
-    // Assert: 元の色はそのまま
-    expect(base.toArray()).toEqual([1, 0.5, 0.25]);
+  // 薄くした石は、消えはしないが、主役の石より目立たない
+  test("FADED_OPACITY は 0 より大きく 0.3 以下", () => {
+    // Assert: 0 にはしない（文字盤の並びが見えるように残す）
+    expect(FADED_OPACITY).toBeGreaterThan(0);
+    // Assert: 0.3 以下（これより濃いと、色の濃い石が白い背景の上で目立ち、主役の石と張り合う）
+    expect(FADED_OPACITY).toBeLessThanOrEqual(0.3);
   });
 
-  // パール（MeshPhysicalMaterial）は、環境マップの映り込みの強さも明るさに合わせる（色だけだとツヤの反射が明るいまま残る）
-  test("applyStoneBrightness は envMapIntensity を持つマテリアルならそれも明るさにする", () => {
+  // パールと同じ MeshPhysicalMaterial の不透明度を書き換える（屈折のマテリアルの opacity の uniform は、下の偽物のマテリアルで確かめる。本物は WebGL が無いと作れない）
+  test("applyStoneOpacity は opacity を持つマテリアルの opacity を書き換える", () => {
     // Arrange: パールと同じ種類のマテリアル
     const material = new THREE.MeshPhysicalMaterial();
-    // Act: 暗くする
-    applyStoneBrightness(material, new THREE.Color(1, 1, 1), DIMMED_BRIGHTNESS);
-    // Assert: 映り込みの強さ
-    expect(material.envMapIntensity).toBeCloseTo(DIMMED_BRIGHTNESS);
-    // Assert: 色も暗くなっている
-    expect(material.color.r).toBeCloseTo(DIMMED_BRIGHTNESS);
+    // Act: 薄くする
+    applyStoneOpacity(material, FADED_OPACITY);
+    // Assert: 不透明度
+    expect(material.opacity).toBeCloseTo(FADED_OPACITY);
   });
 
-  // 縁を白く光らせる Fresnel は石の色と関係なく白を足すので、暗くした石にも白い輪郭が残る。明るさに合わせて弱める
-  test("applyStoneBrightness は fresnel を持つマテリアルなら、基準の強さ × 明るさにする", () => {
-    // Arrange: 色と fresnel を持つ偽物のマテリアル（MeshRefractionMaterial と同じ名前）
-    const material = { color: new THREE.Color(1, 1, 1), fresnel: 0.6 };
-    // Act: 基準の強さ 0.6 のまま、明るさ 0.5 にする
-    applyStoneBrightness(material, new THREE.Color(1, 1, 1), 0.5, 0.6);
-    // Assert: 半分の強さ
-    expect(material.fresnel).toBeCloseTo(0.3);
-  });
-
-  // 基準の強さを渡さなければ fresnel は変えない（パールなど）
-  test("applyStoneBrightness は基準の fresnel を渡さなければ fresnel を変えない", () => {
-    // Arrange: fresnel を持つ偽物のマテリアル
-    const material = { color: new THREE.Color(1, 1, 1), fresnel: 0.6 };
-    // Act: 基準の強さを渡さずに暗くする
-    applyStoneBrightness(material, new THREE.Color(1, 1, 1), 0.5);
-    // Assert: そのまま
-    expect(material.fresnel).toBe(0.6);
+  // 色は変えない（白い背景の上では、暗くすると黒い影のように目立つため、薄くするだけにする）
+  test("applyStoneOpacity は色を変えない", () => {
+    // Arrange: 色と opacity を持つ偽物のマテリアル（MeshRefractionMaterial と同じ名前）
+    const material = { color: new THREE.Color(1, 0.5, 0.25), opacity: 1 };
+    // Act: 薄くする
+    applyStoneOpacity(material, 0.5);
+    // Assert: 色はそのまま
+    expect(material.color.toArray()).toEqual([1, 0.5, 0.25]);
+    // Assert: 不透明度だけ変わる
+    expect(material.opacity).toBe(0.5);
   });
 
   // 空の値では何もしない
   test.each([[null], [undefined]])("%j では何もしない（エラーにならない）", (material) => {
     // Act / Assert: エラーにならない
-    expect(() => applyStoneBrightness(material, new THREE.Color(), 0.5)).not.toThrow();
+    expect(() => applyStoneOpacity(material, 0.5)).not.toThrow();
   });
 
   // 対象の項目を持たないオブジェクトは、中身を変えない
   test.each([
     // 何も持たない
     [{}],
-    // color が three.js の Color ではない
-    [{ color: "red" }],
-    // envMapIntensity や fresnel が数値ではない
-    [{ envMapIntensity: "strong", fresnel: null }],
+    // opacity が数値ではない
+    [{ opacity: "half" }],
   ])("%j の中身は変えない", (material) => {
     // Arrange: 呼ぶ前の中身を控える
     const before = JSON.stringify(material);
-    // Act: 暗くしようとする（基準の Fresnel も渡す）
-    applyStoneBrightness(material, new THREE.Color(1, 1, 1), 0.5, 0.6);
+    // Act: 薄くしようとする
+    applyStoneOpacity(material, 0.5);
     // Assert: 中身は同じ
     expect(JSON.stringify(material)).toBe(before);
   });
 
   // three.js のメッシュは複数のマテリアル（配列）を持てるが、石は 1 つしか使わないので、配列は対象外
   test("マテリアルの配列を渡しても、中のマテリアルは変えない", () => {
-    // Arrange: 色を持つマテリアル 1 つだけの配列
-    const inner = { color: new THREE.Color(1, 1, 1) };
-    // Act: 配列ごと渡して暗くしようとする
-    applyStoneBrightness([inner], new THREE.Color(1, 1, 1), 0.5);
-    // Assert: 中のマテリアルの色は白のまま
-    expect(inner.color.toArray()).toEqual([1, 1, 1]);
+    // Arrange: opacity を持つマテリアル 1 つだけの配列
+    const inner = { opacity: 1 };
+    // Act: 配列ごと渡して薄くしようとする
+    applyStoneOpacity([inner], 0.5);
+    // Assert: 中のマテリアルは不透明のまま
+    expect(inner.opacity).toBe(1);
   });
 
-  // 明るさはなめらかに変わる
-  test("advanceBrightness は目標の明るさへなめらかに近づき、行き過ぎない", () => {
+  // 不透明度はなめらかに変わる
+  test("advanceOpacity は目標の不透明度へなめらかに近づき、行き過ぎない", () => {
     // Act / Assert: 1 フレームでは途中まで
-    expect(advanceBrightness(1, 1 / 60, DIMMED_BRIGHTNESS)).toBeGreaterThan(DIMMED_BRIGHTNESS);
-    // Act / Assert: 1 フレームでも少しは暗くなる
-    expect(advanceBrightness(1, 1 / 60, DIMMED_BRIGHTNESS)).toBeLessThan(1);
+    expect(advanceOpacity(1, 1 / 60, FADED_OPACITY)).toBeGreaterThan(FADED_OPACITY);
+    // Act / Assert: 1 フレームでも少しは薄くなる
+    expect(advanceOpacity(1, 1 / 60, FADED_OPACITY)).toBeLessThan(1);
     // Act / Assert: 十分な時間が経つと目標に落ち着く
-    expect(advanceBrightness(1, 10, DIMMED_BRIGHTNESS)).toBeCloseTo(DIMMED_BRIGHTNESS);
+    expect(advanceOpacity(1, 10, FADED_OPACITY)).toBeCloseTo(FADED_OPACITY);
   });
+
+  // 速さはカメラの移動（約 0.8 秒）とそろえる（係数 5 の damp。1 フレームで残りの e^(-5/60) 倍が残る）
+  test("advanceOpacity は 1 フレーム（1/60 秒）で、残りの差が e^(-5/60) 倍になる", () => {
+    // Act: 不透明から 1 フレーム薄くする
+    const next = advanceOpacity(1, 1 / 60, FADED_OPACITY);
+    // Assert: 0.15 + 0.85 × e^(-5/60) ≒ 0.932
+    expect(next).toBeCloseTo(FADED_OPACITY + (1 - FADED_OPACITY) * Math.exp(-5 / 60), 6);
+  });
+
+  // 選択を外したときは、薄い石が同じ速さで不透明へ戻る
+  test("advanceOpacity は薄い状態から 1 へも戻り、0.8 秒で残りの差が 2% 未満になる", () => {
+    // Act: 薄い状態から 0.8 秒進める
+    const next = advanceOpacity(FADED_OPACITY, 0.8, 1);
+    // Assert: 1 より小さい（行き過ぎない）
+    expect(next).toBeLessThan(1);
+    // Assert: 残りの差（1 - next）が、はじめの差（0.85）の 2% 未満
+    expect(1 - next).toBeLessThan((1 - FADED_OPACITY) * 0.02);
+  });
+
+  // 壊れた経過秒数では、今の不透明度のまま（NaN が入ると石が消えたまま戻らず、負の値では 0〜1 の外へ飛び出すため）
+  test.each([
+    // 経過なし
+    [0],
+    // 数でない
+    [Number.NaN],
+    // 負の値
+    [-1],
+  ])("advanceOpacity は経過秒数 %d では今の不透明度のまま", (delta) => {
+    // Act / Assert: 0.5 のまま
+    expect(advanceOpacity(0.5, delta, FADED_OPACITY)).toBe(0.5);
+  });
+
+  // 今の不透明度が壊れていたら、目標に置き直して立て直す
+  test("advanceOpacity は今の不透明度が NaN なら目標にする", () => {
+    // Act / Assert: 目標に置き直す
+    expect(advanceOpacity(Number.NaN, 1 / 60, FADED_OPACITY)).toBe(FADED_OPACITY);
+  });
+
+  // 影を落とすか: 薄くし始めたらすぐ消し、戻るときはほぼ不透明になってから出す（まだ薄い石の下に濃い影だけが先に出ないように）
+  test.each([
+    // 薄くする石は、まだ不透明でも影を落とさない（選んだ瞬間に影を消す）
+    [true, 1, false],
+    // 戻る途中で、まだ閾値の手前
+    [false, SHADOW_RETURN_OPACITY - 0.01, false],
+    // 閾値ちょうどで影を戻す
+    [false, SHADOW_RETURN_OPACITY, true],
+    // 不透明
+    [false, 1, true],
+  ])("castsShadow は薄くする石か %s・不透明度 %d のとき %s", (isFaded, opacity, expected) => {
+    // Act / Assert: 影を落とすか
+    expect(castsShadow(isFaded, opacity)).toBe(expected);
+  });
+
+  // 閾値は薄い不透明度と 1 の間にある（そうでないと、石が影を落とすレイヤーへ戻れないか、戻りを遅らせられない）
+  test("FADED_OPACITY < SHADOW_RETURN_OPACITY < 1", () => {
+    // Assert: 薄い不透明度より大きい
+    expect(SHADOW_RETURN_OPACITY).toBeGreaterThan(FADED_OPACITY);
+    // Assert: 1 より小さい
+    expect(SHADOW_RETURN_OPACITY).toBeLessThan(1);
+  });
+
+  // 選択を外してから、カメラが一覧へ戻りきる（CAMERA_SMOOTH_TIME、約 0.8 秒）までに影が戻る
+  test("薄い状態から 1/60 秒ずつ戻すと、カメラの移動の時間（CAMERA_SMOOTH_TIME）以内に影を落とすようになる", () => {
+    // Arrange: 薄い状態から始める
+    let opacity = FADED_OPACITY;
+    // Arrange: 経過秒数
+    let elapsed = 0;
+    // Act: 影を落とすようになるまで（念のため 2 秒で打ち切る）1 フレームずつ進める
+    while (!castsShadow(false, opacity) && elapsed < 2) {
+      // 1 フレーム戻す
+      opacity = advanceOpacity(opacity, 1 / 60, 1);
+      // 時間を進める
+      elapsed += 1 / 60;
+    }
+    // Assert: カメラが一覧へ戻りきる時間の目安以内
+    expect(elapsed).toBeLessThanOrEqual(CAMERA_SMOOTH_TIME);
+  });
+
+  // 薄くするかどうかの判定（不透明度と、影を落とさないレイヤーへ移すかの両方が使う）
+  test.each([
+    // 何も選んでいない
+    [null, false],
+    // この石を選んでいる
+    ["ruby", false],
+    // ほかの石を選んでいる
+    ["pearl", true],
+  ] as const)(
+    "isFadedStone は選んでいる石が %s のとき、ルビーを %s にする",
+    (selected, expected) => {
+      // Act / Assert: ルビーを薄くするか
+      expect(isFadedStone("ruby", selected)).toBe(expected);
+    },
+  );
 });
 
 // advanceSpin / advanceLift: 毎フレームの小さな動き（選んだ石の回転、指を乗せた石の浮き上がり）
@@ -562,82 +701,14 @@ describe("adjacentStone", () => {
   );
 });
 
-// ORBIT_STEP_RAD: 解説カードの回すボタンを 1 回押したときに、カメラが石のまわりを回り込む角度
-describe("ORBIT_STEP_RAD", () => {
-  // 12 回押すと 1 周して元の向きに戻る（時計の 1 時間ぶん = 30°）
-  test("12 回でちょうど 1 周（1 回 30°）", () => {
-    // Assert: 12 回ぶんが 2π
-    expect(ORBIT_STEP_RAD * 12).toBeCloseTo(Math.PI * 2, 12);
-  });
-});
-
-// nextOrbitRequest: 回すボタンを押したときの、次の指示（番号は増え続ける）
-describe("nextOrbitRequest", () => {
-  // 最初の 1 回は番号 1
-  test("前の指示が無ければ、番号 1 の指示を作る", () => {
-    // Act / Assert: 向きと番号
-    expect(nextOrbitRequest(null, 1)).toEqual({ direction: 1, serial: 1 });
-  });
-
-  // 向きを替えても番号は戻らない（戻すと、回し済みの番号と重なった指示が黙って捨てられる）
-  test("右のあとに左を押しても、番号は増える", () => {
-    // Act / Assert: 2 回目は左で番号 2
-    expect(nextOrbitRequest(nextOrbitRequest(null, 1), -1)).toEqual({ direction: -1, serial: 2 });
-  });
-
-  // 同じ向きを続けて押しても、別の指示として届く
-  test("同じ向きを続けて押すと、番号が 1 ずつ増える", () => {
-    // Arrange: 1 回目
-    const first = nextOrbitRequest(null, -1);
-    // Act: 2 回目
-    const second = nextOrbitRequest(first, -1);
-    // Assert: 番号が増えた
-    expect(second).toEqual({ direction: -1, serial: 2 });
-  });
-});
-
-// orbitStepFor: まだ回していない指示なら、回り込む角度を返す
-describe("orbitStepFor", () => {
-  // 何も押されていない
-  test("指示が無ければ null", () => {
-    // Act / Assert: 回さない
-    expect(orbitStepFor(null, 0)).toBeNull();
-  });
-
-  // 同じ指示で 2 回回さない（effect のやり直しや、シーンを開いたときの古い指示）
-  test("回し済みの番号なら null", () => {
-    // Act / Assert: 回さない
-    expect(orbitStepFor({ direction: 1, serial: 3 }, 3)).toBeNull();
-  });
-
-  // 新しい指示なら、向きの符号を付けた 1 回ぶんの角度
-  test.each<[-1 | 1, number]>([
-    [1, ORBIT_STEP_RAD],
-    [-1, -ORBIT_STEP_RAD],
-  ])("向き %i の新しい指示なら、%f ラジアン回す", (direction, expected) => {
-    // Act / Assert: 1 回ぶん
-    expect(orbitStepFor({ direction, serial: 4 }, 3)).toBeCloseTo(expected, 12);
-  });
-
-  // 番号が増え続ける限り、途中で何があっても新しい指示は回る（番号を戻すと、回し済みの番号と重なって黙って捨てられる）
-  test("番号を戻さなければ、回し済みのあとに押した指示も回る", () => {
-    // Arrange: 1 回目を回し済み
-    const first = nextOrbitRequest(null, 1);
-    // Act: 続けて押した指示
-    const second = nextOrbitRequest(first, 1);
-    // Assert: 回る
-    expect(orbitStepFor(second, first.serial)).not.toBeNull();
-  });
-});
-
 // jewelHero: 石を選んだときに、解説カードと読み上げの知らせへ出す文言
 describe("jewelHero", () => {
   // 4 月のダイヤモンドの見出し
-  test("月番号・英語の月名・大文字の英名・和名・石言葉を並べる", () => {
+  test("数字の月・大文字の英名・和名・石言葉を並べる", () => {
     // Act: ダイヤモンドの見出しを作る
     const hero = jewelHero(birthstoneById("diamond"));
-    // Assert: 上付きのラベル
-    expect(hero.eyebrow).toBe("04 — April");
+    // Assert: 上付きのラベルは数字の月（2026-10-02 のユーザーの判断。英語の月名にはしない）
+    expect(hero.eyebrow).toBe("4月");
     // Assert: 大きな英字のタイトル
     expect(hero.title).toBe("DIAMOND");
     // Assert: 説明文に月・和名・石言葉が入る
@@ -649,6 +720,15 @@ describe("jewelHero", () => {
     // Assert: 操作のヒントがある
     expect(hero.hint.length).toBeGreaterThan(0);
   });
+
+  // 12 か月とも、頭に 0 を付けない数字の月（10〜12 月で 2 桁が崩れないことも確かめる）
+  test.each(BIRTHSTONES.map((stone) => [stone.month, stone]))(
+    "%i 月の石の上付きラベルは、その数字に「月」を付けたもの",
+    (month, stone) => {
+      // Act / Assert: 数字の月
+      expect(jewelHero(stone).eyebrow).toBe(`${month}月`);
+    },
+  );
 
   // 読み上げ専用の知らせは、見出し全体ではなく、何月の何を選んだかだけを伝える
   test("読み上げの知らせは、月と和名だけの短い文にする", () => {

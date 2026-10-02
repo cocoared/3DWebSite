@@ -25,6 +25,29 @@ export default function ControlPanel({ tab, values, onChange }: ControlPanelProp
   const [isOpen, setIsOpen] = useState(false);
   // panelId: スライダーを並べた部分の id（開閉ボタンの aria-controls から「このボタンが開け閉めする場所」として指す）
   const panelId = useId();
+  // glassClass: ボタンとパネルの地の暗さ。誕生石シーンは 3D が表示されると背景が真っ白になるので（読み込み中も同じ濃さにする）、後ろが白でもいちばん薄い文字（単位、opacity-50）が 4.5:1 を超えるよう濃くする（0.88）。
+  // 太陽・浜辺は後ろが暗いので、3D が透けて見える薄さ（ボタン 0.55・パネル 0.6）のまま。
+  // クラス名は組み立てず、そのままの文字列で書く（Tailwind はソースの文字列から CSS を作るため）
+  // 開閉ボタンのフォーカスの枠も、後ろの明るさで変える（focus）。誕生石シーンでは、外側を濃い色（ink）、内側を白い縁にする（白い枠は白い背景の上で見えないため）。
+  // 太陽・浜辺では、外側を白、内側を暗い縁にする（明るい太陽や空の上でも見えるように）
+  const glassClass =
+    tab === "jewel"
+      ? {
+          // ボタンの地
+          button: "bg-[rgba(10,12,20,0.88)]",
+          // パネルの地
+          panel: "bg-[rgba(9,10,16,0.88)]",
+          // フォーカスの二重の枠
+          focus: "focus-visible:shadow-[0_0_0_2px_#ffffff] focus-visible:outline-ink",
+        }
+      : {
+          // ボタンの地
+          button: "bg-[rgba(10,12,20,0.55)]",
+          // パネルの地
+          panel: "bg-[rgba(9,10,16,0.6)]",
+          // フォーカスの二重の枠
+          focus: "focus-visible:shadow-[0_0_0_2px_rgba(0,0,0,0.85)] focus-visible:outline-paper",
+        };
 
   return (
     // control: 開閉ボタンとパネルの外枠。--accent でシーン色を中へ伝える。
@@ -46,9 +69,9 @@ export default function ControlPanel({ tab, values, onChange }: ControlPanelProp
         // 押すたびに開く・閉じるを切り替える
         onClick={() => setIsOpen((open) => !open)}
         // シーンのタブと同じガラス風の丸いボタン。高さは約 37px（親指で押しやすいよう py-2.5）。
-        // キーボードで選んだときは、白い枠の内側に暗い縁（box-shadow）を重ねた二重の枠を出す（明るい太陽や空の上でも枠が見えるように）
+        // キーボードで選んだときは、枠の内側に縁（box-shadow）を重ねた二重の枠を出す（色は glassClass.focus。後ろが明るくても暗くても枠が見えるように）
         // shrink-0: 画面が低くてもボタンは縮めない（縮むのはパネルのほう）
-        className="flex roomy:hidden shrink-0 cursor-pointer items-center gap-2 rounded-full border border-white/15 bg-[rgba(10,12,20,0.55)] px-4 py-2.5 font-mono text-[11px] text-paper uppercase tracking-[0.2em] backdrop-blur-[14px] focus-visible:shadow-[0_0_0_2px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-paper focus-visible:outline-offset-2"
+        className={`flex roomy:hidden shrink-0 cursor-pointer items-center gap-2 rounded-full border border-white/15 ${glassClass.button} px-4 py-2.5 font-mono text-[11px] text-paper uppercase tracking-[0.2em] backdrop-blur-[14px] focus-visible:outline-2 focus-visible:outline-offset-2 ${glassClass.focus}`}
       >
         {/* シーン色の点（飾りなので読み上げない） */}
         <span aria-hidden="true" className="h-1.75 w-1.75 rounded-full bg-(--accent)" />
@@ -68,7 +91,7 @@ export default function ControlPanel({ tab, values, onChange }: ControlPanelProp
           パソコン向けの配置（roomy:）では、いつも幅 276px で見せる */}
       <div
         id={panelId}
-        className={`${isOpen ? "block" : "hidden"} roomy:block max-h-[50dvh] roomy:max-h-none min-h-0 roomy:min-h-auto roomy:w-69 w-full roomy:overflow-visible overflow-y-auto rounded-[18px] border border-white/15 bg-[rgba(9,10,16,0.6)] px-5 pt-4.5 pb-5.5 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg`}
+        className={`${isOpen ? "block" : "hidden"} roomy:block max-h-[50dvh] roomy:max-h-none min-h-0 roomy:min-h-auto roomy:w-69 w-full roomy:overflow-visible overflow-y-auto rounded-[18px] border border-white/15 ${glassClass.panel} px-5 pt-4.5 pb-5.5 shadow-[0_26px_64px_-26px_rgba(0,0,0,0.8)] backdrop-blur-lg`}
       >
         {/* p-head: パネル見出し。右に脈動する点を置く。スマホ向けの配置では開閉ボタンが同じ名前を出しているので隠す */}
         <div className="mb-2 roomy:flex hidden items-center justify-between font-mono text-[11px] uppercase tracking-[0.2em] opacity-85">

@@ -54,12 +54,11 @@ function MonthLabels({ handles, onSelect }: MonthLabelsProps) {
           // パソコン向けの配置の縦長・正方形の窓でも内側に並ぶが、石が大きく写るので幅 約 54px のままで重ならない。
           // 幅か高さが 360px 未満（small:）では文字盤がさらに小さく写るので、左右の余白を 3px、字間を 0、行の高さを文字の高さにまで詰める（約 28 × 24px）。
           // 320 × 568 でも隣のラベルと重ならない（上下に接する組は残る）。高さは押せる的の最低ライン 24px（min-h-6）で止め、文字は 11px のまま読みやすさを保つ。
-          // キーボードで選んだときは、その石の色の枠を出し、内側に暗い縁（box-shadow）を重ねる（ダイヤやパールの白っぽい色の枠でも、明るい石の上で見えるように）。
+          // キーボードで選んだときは、濃い色（ink）の枠を出し、内側に白い縁（box-shadow）を重ねる二重の枠にする。ラベルは真っ白な背景の上に出るので、
+          // 外側の濃い枠が白の上で、内側の白い縁が暗いラベルや暗いパネルの上で見える（石の色の枠は、12 色のうち 9 色が白に対して 3:1 に届かなかった）。
           // focus-visible:z-10: そのラベルを隣のラベルより上に描く（ラベルは後ろのものほど上に描かれ、接している・重なっている隣のラベルが枠を覆うため）。
           // will-change-transform: 毎フレーム動かすので、描画を別の層に分けてもらう
-          className="pointer-events-auto invisible absolute top-0 left-0 flex min-h-6 min-w-6 cursor-pointer items-center gap-1.5 rounded-md border border-white/15 bg-[rgba(10,12,20,0.75)] px-1.5 roomy:px-2 py-1 font-mono text-[11px] text-paper/85 uppercase roomy:tracking-[0.12em] tracking-[0.06em] backdrop-blur-sm transition-colors will-change-transform hover:text-white focus-visible:z-10 focus-visible:shadow-[0_0_0_2px_rgba(0,0,0,0.85)] focus-visible:outline-2 focus-visible:outline-offset-2 small:px-[3px] small:py-0.5 small:leading-none small:tracking-normal"
-          // キーボードで選んだときの枠の色を、その石の色にする
-          style={{ outlineColor: stone.uiColor }}
+          className="pointer-events-auto invisible absolute top-0 left-0 flex min-h-6 min-w-6 cursor-pointer items-center gap-1.5 rounded-md border border-white/15 bg-[rgba(10,12,20,0.75)] px-1.5 roomy:px-2 py-1 font-mono text-[11px] text-paper/85 uppercase roomy:tracking-[0.12em] tracking-[0.06em] backdrop-blur-sm transition-colors will-change-transform hover:text-white focus-visible:z-10 focus-visible:shadow-[0_0_0_2px_#ffffff] focus-visible:outline-2 focus-visible:outline-ink focus-visible:outline-offset-2 small:px-[3px] small:py-0.5 small:leading-none small:tracking-normal"
         >
           {/* 石の色の小さな点（飾りなので読み上げない）。スマホ向けの配置では幅を詰めるために出さない */}
           <span

@@ -7,6 +7,7 @@ import {
   birthstoneByMonth,
   birthstoneSpecs,
   MONTH_NAMES,
+  monthJaLabel,
   monthName,
   monthShortLabel,
   parseBirthstones,
@@ -219,7 +220,19 @@ describe("誕生石の検索", () => {
     expect([monthShortLabel(1), monthShortLabel(12)]).toEqual(["JAN", "DEC"]);
   });
 
-  // 月名は見出し（例: 04 — April）に使う
+  // 解説カードの月の表記（例: 4月）。数字と「月」で出す
+  test("monthJaLabel は数字の月に「月」を付けて返す（頭に 0 を付けない）", () => {
+    // Assert: 1 月・4 月・12 月
+    expect([monthJaLabel(1), monthJaLabel(4), monthJaLabel(12)]).toEqual(["1月", "4月", "12月"]);
+  });
+
+  // 範囲外や整数でない月は、"0月" や "1.5月" を出さずに誤りとして知らせる
+  test.each([0, 13, -1, 1.5, Number.NaN])("monthJaLabel(%s) は RangeError を投げる", (month) => {
+    // Act / Assert: 誤りになる
+    expect(() => monthJaLabel(month)).toThrow(RangeError);
+  });
+
+  // 英語の月名。月のラベルの短い名前（monthShortLabel）のもとになる（解説カードの月は monthJaLabel の「4月」）
   test("monthName は英語の月名を返す", () => {
     // Assert: 4 月と 12 月
     expect([monthName(4), monthName(12)]).toEqual(["April", "December"]);

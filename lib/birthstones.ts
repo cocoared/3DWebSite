@@ -250,7 +250,7 @@ export function parseBirthstones(data: unknown): Birthstone[] {
 /** 12 か月の誕生石（1 月〜12 月の順）。読み込み時に `parseBirthstones` で検証済み。 */
 export const BIRTHSTONES: readonly Birthstone[] = parseBirthstones(raw);
 
-/** 英語の月名（1 月 = 添字 0）。見出しや月のラベルに使う。 */
+/** 英語の月名（1 月 = 添字 0）。`monthName` を通して、文字盤の月のラベル（JAN など）と、月の範囲の判定のもとになる。 */
 export const MONTH_NAMES = [
   // 1 月
   "January",
@@ -302,7 +302,7 @@ export function birthstoneById(id: BirthstoneId): Birthstone {
 }
 
 /**
- * 英語の月名（例: `4` → `"April"`）。見出しの上付きラベルに使う。
+ * 英語の月名（例: `4` → `"April"`）。月の短い名前（`monthShortLabel`）と、月の範囲の判定（`monthJaLabel`）のもとになる。
  *
  * @param month - 1〜12 の月
  * @throws 範囲外や整数でない月のとき（RangeError）。画面に "undefined" と出さないようにする
@@ -317,7 +317,7 @@ export function monthName(month: number): string {
 }
 
 /**
- * 月のラベルや前後の月のボタンに出す短い月名（英語の頭 3 文字の大文字。例: `"JAN"`）。
+ * 文字盤の月のラベルに出す短い月名（英語の頭 3 文字の大文字。例: `"JAN"`）。
  *
  * @param month - 1〜12 の月
  * @throws 範囲外や整数でない月のとき（RangeError）
@@ -325,6 +325,19 @@ export function monthName(month: number): string {
 export function monthShortLabel(month: number): string {
   // 月名の頭 3 文字を大文字にする（範囲外の月は monthName が RangeError にする）
   return monthName(month).slice(0, 3).toUpperCase();
+}
+
+/**
+ * 解説カードに出す月の表記（数字に「月」を付ける。例: `4` → `"4月"`）。
+ *
+ * @param month - 1〜12 の月
+ * @throws 範囲外や整数でない月のとき（RangeError）。"0月" や "1.5月" を出さないようにする
+ */
+export function monthJaLabel(month: number): string {
+  // 範囲外や整数でない月は、monthName と同じ判定で誤りにする（判定を 1 か所にまとめる）
+  monthName(month);
+  // 数字の月に「月」を付ける
+  return `${month}月`;
 }
 
 /** 解説カードの特徴の表の 1 行（見出し, 値）。 */

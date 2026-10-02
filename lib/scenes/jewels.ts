@@ -1,6 +1,8 @@
 // 誕生石シーン（THE JEWELS）の「ロジック」を集約したモジュール（描画/JSX は components/scenes/JewelsScene.tsx 側）。
 // 12 個の誕生石を時計の文字盤の位置に並べ、月を選ぶとその石へカメラを寄せる。
-// 石の形は Blender の JewelCraft で作った public/jewels/jewels.glb、照明は Cycles で焼いた public/jewels/studio.hdr を使う。
+// 石の形は Blender の JewelCraft で作った public/jewels/jewels.glb、石とパールの照明は Cycles で焼いた public/jewels/studio.hdr を使う
+// （背景は真っ白。components/scenes/JewelsScene.tsx の BACKGROUND_COLOR）。
+// 「床」は高さ 0 の基準面のこと（床のメッシュは置いていない。石の影を映す板（ContactShadows）は、その 0.01 mm 下）。
 // 長さの単位はミリメートル（Blender で 1 単位 = 1 mm として作った .glb をそのまま使うため）。
 
 import * as THREE from "three";
@@ -9,7 +11,7 @@ import {
   BIRTHSTONES,
   type Birthstone,
   type BirthstoneId,
-  monthName,
+  monthJaLabel,
 } from "@/lib/birthstones";
 import { HERO, type HeroContent, isCompactLayout } from "@/lib/scene";
 
@@ -24,7 +26,7 @@ export type Vec3 = readonly [x: number, y: number, z: number];
 /** 石の形（Blender の JewelCraft で作り、build_jewels.py で書き出した glTF）の URL。 */
 export const JEWELS_GLB_URL = "/jewels/jewels.glb";
 
-/** 環境マップ（Cycles でスタジオの照明を全方向に焼いた Radiance HDR）の URL。 */
+/** 石の屈折とパールの映り込みに使う環境マップ（Cycles でスタジオの照明を全方向に焼いた Radiance HDR）の URL。 */
 export const JEWELS_ENV_URL = "/jewels/studio.hdr";
 
 /** 12 石を並べる時計の文字盤の半径（mm）。隣の石の中心の間隔（直線で約 15.5 mm）が、いちばん長い石（8 mm）の 2 倍ほどになる大きさ。 */
@@ -53,12 +55,10 @@ export const MIN_ABERRATION = 0.0001;
 export const TINT_POWER = 1.6;
 
 /**
- * 石を選んでいる間の、ほかの石の明るさ（1 = ふつう）。暗く沈めて主役の石を浮かび上がらせる。0 にはせず、文字盤の並びは見えるように残す。
- * 環境マップには明るさ 80 の点光源などの非常に明るい光が入っているので、0.2 程度ではトーンマッピングで飽和して暗く見えない。
- * 0.06 にすると、ストリップの映り込みは沈み、点光源の小さな光だけが残る（暗い部屋で主役にだけ光を当てたような見え方）。
- * 注意（2026-09-30）: ブラウザで見ると、石を選んでもほかの石が暗く沈んでいない（変更前の版でも同じ）。空間と光を見直すときに原因を調べて直す。
+ * 石を選んでいる間の、ほかの石の不透明度（1 = 不透明）。真っ白な背景へ溶かすように薄くして、主役の石を浮かび上がらせる。0 にはせず、文字盤の並びは見えるように残す。
+ * 大きくすると、ほかの石の色がはっきり残り、主役の石と張り合う。
  */
-export const DIMMED_BRIGHTNESS = 0.06;
+export const FADED_OPACITY = 0.15;
 
 /**
  * カメラが目標の姿勢へ移るときの時間の目安（秒）。drei の `CameraControls` の `smoothTime` に渡す。大きいほどゆっくり回り込む。
@@ -68,9 +68,6 @@ export const CAMERA_SMOOTH_TIME = 0.8;
 
 // FOCUS_ELEVATION: 石を選んだときにカメラが石を見下ろす角度（ラジアン）。0.5 ≒ 29°。少し低めにして、テーブル面だけでなく切子面の側面も見せる
 const FOCUS_ELEVATION = 0.5;
-// FIRE_GAIN: 分散（宝石学の値）を MeshRefractionMaterial の aberrationStrength に直す倍率。
-// 大きいほど虹色のずれが強くなる。ダイヤ（0.044）で分散スライダー 0.5 のとき 0.0176 になり、drei の作例の値（0.01〜0.02）に近い
-const FIRE_GAIN = 0.8;
 // BASE_EXPOSURE: 光量スライダー 1 のときの露出（2 倍 = +1 段）。Blender の jewels.blend の露出（+1 段）と同じ
 const BASE_EXPOSURE = 2;
 // SPIN_SETTLE: 選ばれなくなった石が元の向きへ戻る速さ（大きいほど早く戻る。MathUtils.damp の係数）
@@ -81,8 +78,8 @@ const LIFT_SMOOTHING = 10;
 const VIEW_SHIFT_SMOOTHING = 5;
 // VIEW_SHIFT_SNAP_PX: 目標までこれより近ければ、ぴったり目標にする（px）。1 px 未満の動きは目に見えないので、描き直しを止めるため
 const VIEW_SHIFT_SNAP_PX = 0.5;
-// BRIGHTNESS_SMOOTHING: 石を暗く沈める・戻す速さ（MathUtils.damp の係数）。カメラの移動（約 0.8 秒）と同じくらいの時間で変わる値
-const BRIGHTNESS_SMOOTHING = 5;
+// OPACITY_SMOOTHING: 石を薄くする・戻す速さ（MathUtils.damp の係数）。カメラの移動（約 0.8 秒）と同じくらいの時間で変わる値
+const OPACITY_SMOOTHING = 5;
 // TURN: 1 周のラジアン（2π）
 const TURN = Math.PI * 2;
 
@@ -108,44 +105,6 @@ export function ringPosition(month: number, radius: number = RING_RADIUS_MM): Ve
   const angle = ringAngle(month);
   // 右へ sin、奥へ cos の分だけ進んだ位置（奥は -Z なので符号を反転する）
   return [radius * Math.sin(angle), 0, -radius * Math.cos(angle)];
-}
-
-/**
- * 解説カードの回すボタンを 1 回押したときに、カメラが石のまわりを回り込む角度（ラジアン）。π/6 = 30°（時計の 1 時間ぶん）で、12 回で 1 周する。
- * ドラッグできない人（キーボード・スイッチ操作など）が、選んだ石をいろいろな向きから見られるようにするため（WCAG 2.5.7。石を選んでいる間の代わりの手段で、一覧でのドラッグやピンチの拡大には代わりのボタンがない）。大きくすると 1 回で大きく回る。
- */
-export const ORBIT_STEP_RAD = Math.PI / 6;
-
-/** 視点を石のまわりに回り込ませる指示（解説カードの回すボタン）。同じ向きを続けて押しても届くよう、押すたびに増える番号を付ける。 */
-export interface OrbitRequest {
-  /** -1 で左へ、1 で右へ回り込む（カメラが動く向き）。 */
-  readonly direction: -1 | 1;
-  /** 押された回数。増え続けるだけで、戻さない（戻すと、回し済みの番号と重なった指示が黙って捨てられる）。 */
-  readonly serial: number;
-}
-
-/**
- * 回すボタンを押したときの、次の指示を作る。番号は前の指示の番号 + 1（前が無ければ 1）。
- *
- * @param previous - 前の指示（まだ押されていなければ `null`）
- * @param direction - -1 で左へ、1 で右へ
- */
-export function nextOrbitRequest(previous: OrbitRequest | null, direction: -1 | 1): OrbitRequest {
-  // 向きと、1 増やした番号
-  return { direction, serial: (previous?.serial ?? 0) + 1 };
-}
-
-/**
- * まだ回していない指示なら、視点を回り込ませる角度（ラジアン。方位角の増分）を返す。回し済み・指示なしなら `null`。
- *
- * @param request - 今の指示
- * @param handledSerial - 最後に回した指示の番号（シーンを開いたときは、その時点の指示の番号から始める）
- */
-export function orbitStepFor(request: OrbitRequest | null, handledSerial: number): number | null {
-  // 指示が無い、または回し済みなら回さない
-  if (!request || request.serial === handledSerial) return null;
-  // 向きの符号を付けた 1 回ぶんの角度
-  return request.direction * ORBIT_STEP_RAD;
 }
 
 /**
@@ -236,7 +195,7 @@ export const MAX_FOV_DEG = 90;
  * 画面の縦横比に合わせた、カメラの縦の画角（度）を求める。画面の大きさが変わるたびに呼ぶ。
  *
  * 縦長の画面（スマホ）では横に見える範囲が狭くなり、文字盤の左右の石が切れてしまう。
- * カメラを遠ざけると霧で奥の石が消えるので、代わりに縦の画角を広げて、横に見える範囲を `FOV_REFERENCE_ASPECT` のときと同じに保つ。
+ * カメラを遠ざけると寄り引きの上限（`maxDistance`）に当たり、石も小さく写るので、代わりに縦の画角を広げて、横に見える範囲を `FOV_REFERENCE_ASPECT` のときと同じに保つ。
  * 石を選んだときのカメラの距離は変えないので、選んだ石は画面の高さに対しては小さく写るが、画面の幅に対する大きさは正方形の画面と同じになる。
  *
  * @param aspect - 画面の幅 / 高さ。0 以下・無限大・NaN（描き始めで大きさが 0 のときなど）なら基準の画角を返す
@@ -369,17 +328,32 @@ export function nearestAngle(current: number, desired: number): number {
 }
 
 /**
- * 分散スライダーと石の分散から、MeshRefractionMaterial の `aberrationStrength`（虹色のずれ）を求める。
+ * 分散スライダーを 1 にしたとき、石の分散（赤と青の屈折率の差）を実物の何倍にして見せるか。
+ * 実物の分散のままでは、画面の上で虹色のずれが 1 ピクセルにも満たず、ほとんど見えない。
+ * 大きいほど虹色（ファイア）が強く出る。スライダーの初期値 0.5 では、この値の半分の倍率になる。
+ */
+export const FIRE_GAIN = 4;
+
+/**
+ * 分散スライダーと石の分散・屈折率から、MeshRefractionMaterial の `aberrationStrength`（虹色のずれ）を求める。
+ * `fastChroma` を使わないとき、drei は赤を「屈折率 × (1 - 値)」、青を「屈折率 × (1 + 値)」で屈折させるので、
+ * 赤と青の屈折率の差（2 × 屈折率 × 値）が、石の分散 × スライダー × `FIRE_GAIN` になるよう逆算する。
  * drei の実装では 0 と正の値を行き来するとマテリアルが作り直され、屈折の計算に使う BVH が失われるので、0 は返さない。
  *
- * @param dispersion - 石の分散（宝石学の B–G 間の値。ダイヤは 0.044）
- * @param fire - 分散スライダーの値（0〜1。範囲外は収める）
+ * @param dispersion - 石の分散（宝石学の B–G 間の屈折率の差。ダイヤは 0.044）
+ * @param ior - 石の屈折率（1 以上。1 未満や数でない値なら `MIN_ABERRATION` を返す）
+ * @param fire - 分散スライダーの値（0〜1。範囲外は収める。数でない値なら `MIN_ABERRATION` を返す）
+ * @returns drei の `aberrationStrength` に渡す値（`MIN_ABERRATION` 以上。実際の 12 石では 0.04 未満）
  */
-export function aberrationFor(dispersion: number, fire: number): number {
+export function aberrationFor(dispersion: number, ior: number, fire: number): number {
+  // 数でない値や 1 未満の屈折率では式が成り立たない（NaN や無限大を drei に渡すと屈折が壊れる）ので、下限の値にする
+  if (!Number.isFinite(dispersion) || !Number.isFinite(fire) || !(ior >= 1)) return MIN_ABERRATION;
   // スライダーの値を 0〜1 に収める
   const amount = THREE.MathUtils.clamp(fire, 0, 1);
-  // 石の分散 × スライダー × 倍率。下限を付けて 0 にしない
-  return Math.max(MIN_ABERRATION, dispersion * amount * FIRE_GAIN);
+  // 見せたい赤と青の屈折率の差（石の分散 × スライダー × 倍率）
+  const spread = dispersion * amount * FIRE_GAIN;
+  // 差が 2 × 屈折率 × 値 になる値。下限を付けて 0 にしない
+  return Math.max(MIN_ABERRATION, spread / (2 * ior));
 }
 
 /**
@@ -412,64 +386,78 @@ export function tintFromColor(hex: string): Vec3 {
 }
 
 /**
- * 石の明るさの目標（1 = ふつう）。何も選んでいなければ全部ふつう、石を選んでいる間はその石だけふつうで、ほかは `DIMMED_BRIGHTNESS`。
+ * 石を薄くするか（ほかの石を選んでいる間は `true`）。不透明度の目標（`stoneOpacity`）と、影を落とすかの判定（`castsShadow`）の入力の両方に使う。
  *
- * @param id - 明るさを決める石
+ * @param id - 判定する石
  * @param selected - 選んでいる石（選んでいなければ `null`）
  */
-export function stoneBrightness(id: BirthstoneId, selected: BirthstoneId | null): number {
-  // 選んでいないか、この石が選ばれていればふつうの明るさ、それ以外は暗くする
-  return selected === null || selected === id ? 1 : DIMMED_BRIGHTNESS;
+export function isFadedStone(id: BirthstoneId, selected: BirthstoneId | null): boolean {
+  // 何かを選んでいて、それがこの石でなければ薄くする
+  return selected !== null && selected !== id;
 }
 
 /**
- * 石の明るさを 1 フレーム進める（目標の明るさへなめらかに近づける）。
- *
- * @param brightness - 今の明るさ
- * @param delta - 前フレームからの経過秒数
- * @param target - 目標の明るさ（`stoneBrightness` の値）
- * @returns 次のフレームの明るさ
+ * 選択を外して石が不透明へ戻るとき、影を落とすようにする不透明度（0〜1）。`FADED_OPACITY` より大きく 1 より小さい。
+ * すぐ戻すと、まだ薄い石の下に濃い影だけが先に出るので、ほぼ不透明になってから戻す。小さくすると影が早く出る。
  */
-export function advanceBrightness(brightness: number, delta: number, target: number): number {
-  // 目標へなめらかに近づける（行き過ぎない）
-  return THREE.MathUtils.damp(brightness, target, BRIGHTNESS_SMOOTHING, delta);
+export const SHADOW_RETURN_OPACITY = 0.9;
+
+/**
+ * 石が影を落とすか。薄くする石は（まだ不透明でも）すぐ影を消し、戻る石は不透明度が `SHADOW_RETURN_OPACITY` 以上になってから影を出す。
+ * 呼び出し側は、`false` の石を影を撮るカメラに写らないレイヤーへ移す。
+ *
+ * @param isFaded - 薄くする石か（`isFadedStone`）
+ * @param opacity - 今の不透明度（0〜1）
+ */
+export function castsShadow(isFaded: boolean, opacity: number): boolean {
+  // 薄くしない石で、ほぼ不透明になっていれば影を落とす
+  return !isFaded && opacity >= SHADOW_RETURN_OPACITY;
 }
 
 /**
- * 石のマテリアルに明るさを当てはめる。`useFrame` から毎フレーム呼ぶ前提で、渡した `material` を**直接書き換える**（毎フレームの割り当てを避けるため）。
+ * 石の不透明度の目標（1 = 不透明）。何も選んでいなければ全部不透明、石を選んでいる間はその石だけ不透明で、ほかは `FADED_OPACITY`。
  *
- * - 色（`color`）を持つマテリアル: 色を「元の色 × 明るさ」にする（MeshRefractionMaterial の屈折の色、パールの地の色）
- * - `envMapIntensity` を持つマテリアル（パールの MeshPhysicalMaterial）: 環境マップの映り込みも明るさにする（色だけだとツヤの反射が明るいまま残る）
- * - `baseFresnel` を渡し、`fresnel` を持つマテリアル（MeshRefractionMaterial）: 縁を白く光らせる強さを「基準の強さ × 明るさ」にする
- *   （Fresnel は石の色と関係なく白を足すので、弱めないと暗くした石に白い輪郭が残る）
- * - どれも持たないものや空の値、マテリアルの配列（石は 1 つのマテリアルしか使わないので対象外）では何もしない
+ * @param id - 不透明度を決める石
+ * @param selected - 選んでいる石（選んでいなければ `null`）
+ */
+export function stoneOpacity(id: BirthstoneId, selected: BirthstoneId | null): number {
+  // 薄くする石なら FADED_OPACITY、それ以外（選んでいない・この石を選んでいる）は不透明
+  return isFadedStone(id, selected) ? FADED_OPACITY : 1;
+}
+
+/**
+ * 石の不透明度を 1 フレーム進める（目標の不透明度へなめらかに近づける）。
+ *
+ * @param opacity - 今の不透明度
+ * @param delta - 前フレームからの経過秒数。0 以下・NaN なら今の不透明度のまま（負の値で 0〜1 の外へ飛び出さないように）
+ * @param target - 目標の不透明度（`stoneOpacity` の値）
+ * @returns 次のフレームの不透明度。今の不透明度が有限でない（NaN・±Infinity）なら目標（NaN のままだと石が消えたまま戻らないため）
+ */
+export function advanceOpacity(opacity: number, delta: number, target: number): number {
+  // 今の値が壊れていたら、目標に置き直して立て直す
+  if (!Number.isFinite(opacity)) return target;
+  // 経過時間が 0 以下・NaN なら、今の値のまま
+  if (!(delta > 0)) return opacity;
+  // 目標へなめらかに近づける（行き過ぎない）
+  return THREE.MathUtils.damp(opacity, target, OPACITY_SMOOTHING, delta);
+}
+
+/**
+ * 石のマテリアルに不透明度を当てはめる。`useFrame` から毎フレーム呼ぶ前提で、渡した `material` を**直接書き換える**（毎フレームの割り当てを避けるため）。
+ *
+ * - `opacity`（数値）を持つマテリアル（MeshRefractionMaterial の uniform、パールの MeshPhysicalMaterial）: 不透明度を書き換える。色は変えない
+ * - 持たないものや空の値、マテリアルの配列（石は 1 つのマテリアルしか使わないので対象外）では何もしない
+ *
+ * 呼び出し側の責任: マテリアルを `transparent` にしておく（しないと three.js が不透明として描き、薄くならない）。
  *
  * @param material - メッシュのマテリアル（型が決まらないものとして受け取る）
- * @param base - 明るさ 1 のときの色（線形 RGB）。書き換えない
- * @param brightness - 明るさ（1 = ふつう）
- * @param baseFresnel - 明るさ 1 のときの Fresnel の強さ。省略すると Fresnel は変えない
+ * @param opacity - 不透明度（0〜1）
  */
-export function applyStoneBrightness(
-  material: unknown,
-  base: THREE.Color,
-  brightness: number,
-  baseFresnel?: number,
-): void {
+export function applyStoneOpacity(material: unknown, opacity: number): void {
   // オブジェクトでない、または配列（複数のマテリアル）なら何もしない
   if (typeof material !== "object" || material === null || Array.isArray(material)) return;
-  // 色の uniform（three.js の Color）を持つなら、元の色 × 明るさにする
-  if ("color" in material && material.color instanceof THREE.Color)
-    material.color.copy(base).multiplyScalar(brightness);
-  // 映り込みの強さ（数値）を持つなら、それも明るさにする（in と typeof で型が絞り込まれるので、キャストは要らない）
-  if ("envMapIntensity" in material && typeof material.envMapIntensity === "number") {
-    // 映り込みの強さを書き換える（性能のため直接書き換える）
-    material.envMapIntensity = brightness;
-  }
-  // 基準の強さが渡されていて、Fresnel の強さ（数値）を持つなら、明るさに合わせて弱める
-  if (baseFresnel !== undefined && "fresnel" in material && typeof material.fresnel === "number") {
-    // Fresnel の強さを書き換える（性能のため直接書き換える）
-    material.fresnel = baseFresnel * brightness;
-  }
+  // 不透明度（数値）を持つなら書き換える（in と typeof で型が絞り込まれるので、キャストは要らない。性能のため直接書き換える）
+  if ("opacity" in material && typeof material.opacity === "number") material.opacity = opacity;
 }
 
 /**
@@ -596,12 +584,10 @@ export function adjacentStone(stone: Birthstone, step: -1 | 1): Birthstone {
  * 読み上げ専用の知らせ（`PortfolioExperience` の `role="status"`）に使う。
  */
 export function jewelHero(stone: Birthstone): HeroContent {
-  // 2 桁の月番号（例: 04）
-  const number = String(stone.month).padStart(2, "0");
   // 見出しの文言をまとめて返す
   return {
-    // 上付きラベル（例: 04 — April）。月名は範囲外の月なら RangeError になる（"undefined" を出さない）
-    eyebrow: `${number} — ${monthName(stone.month)}`,
+    // 上付きラベル（例: 4月）。範囲外の月なら RangeError になる（"0月" などを出さない）
+    eyebrow: monthJaLabel(stone.month),
     // 大きな英字タイトル（例: DIAMOND）
     title: stone.name.toUpperCase(),
     // 説明文（例: 4月の誕生石、ダイヤモンド。石言葉は「強さ」（Strength）。）
