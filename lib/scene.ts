@@ -26,7 +26,7 @@ export interface OceParams {
 
 /** 誕生石シーン（THE JEWELS）の操作パラメータ。 */
 export interface JewelParams {
-  /** 光量。0〜3。レンダラーの露出（toneMappingExposure）は 2 × 光量になる（光量 1 で露出 2。Blender の jewels.blend の露出 +1 段と同じ）。 */
+  /** 光量。0〜3。環境マップ（スタジオの光。studio.hdr）の強さの倍率で、1 でスタジオの光そのまま。露出は 2 倍に固定で、この値では変えない（lib/scenes/jewels.ts の envIntensityFor）。 */
   amb: number;
   /** 分散（虹色のきらめき＝ファイア）の強さ。0〜1。石ごとの分散の値に掛けて MeshRefractionMaterial に渡す。 */
   fire: number;
@@ -48,7 +48,7 @@ export const DEFAULT_PARAMS: SceneParams = {
   sun: { amb: 1.5, rot: 0.5, mera: 0.55 },
   // 浜辺: 昼寄り 0.85・波の高さ 0.5・速さ 0.45
   oce: { amb: 0.85, wave: 0.5, speed: 0.45 },
-  // 誕生石: 光量 1（露出 2 倍）・分散 0.5（控えめなファイア）
+  // 誕生石: 光量 1（スタジオの光そのまま）・分散 0.5（控えめなファイア）
   jewel: { amb: 1, fire: 0.5 },
 };
 
@@ -207,7 +207,7 @@ export const SLIDERS: Record<SceneTab, SliderDef[]> = {
   ],
   // 誕生石シーンのスライダー
   jewel: [
-    // 光量（露出）
+    // 光量（環境マップの強さ）
     { field: "amb", name: "光量", unit: "light", min: 0, max: 3, step: 0.05 },
     // 分散（虹色のきらめき）
     { field: "fire", name: "分散", unit: "fire", min: 0, max: 1, step: 0.02 },

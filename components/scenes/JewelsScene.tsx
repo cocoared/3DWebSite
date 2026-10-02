@@ -21,23 +21,6 @@ import {
 import type { JewelParams } from "@/lib/scene";
 import { labelAnchor, labelSide, type ScreenPoint } from "@/lib/scenes/jewelLabels";
 import {
-  advanceSpotlight,
-  BEAM_BOTTOM_RADIUS_MM,
-  BEAM_OPACITY,
-  BEAM_TOP_RADIUS_MM,
-  BEAM_VISIBLE_LEVEL,
-  createBeamMaterial,
-  createPoolMaterial,
-  createSpotlightState,
-  POOL_OPACITY,
-  POOL_RADIUS_MM,
-  SPOTLIGHT_ANGLE_RAD,
-  SPOTLIGHT_COLOR,
-  SPOTLIGHT_HEIGHT_MM,
-  setGlowStrength,
-  spotlightAim,
-} from "@/lib/scenes/jewelSpotlight";
-import {
   aberrationFor,
   advanceLift,
   advanceOpacity,
@@ -48,7 +31,7 @@ import {
   CAMERA_SMOOTH_TIME,
   castsShadow,
   disposeRefractionBvh,
-  exposureFor,
+  envIntensityFor,
   fitFov,
   focusPose,
   focusViewShift,
@@ -60,12 +43,13 @@ import {
   OVERVIEW_POSE,
   orbitAngles,
   pickStoneGeometries,
+  refractionColor,
   ringPosition,
+  STUDIO_EXPOSURE,
   type StonePlacement,
   stoneOpacity,
   stonePlacement,
   stoneYaw,
-  tintFromColor,
 } from "@/lib/scenes/jewels";
 import { usePrefersReducedMotion } from "@/lib/usePrefersReducedMotion";
 
@@ -75,22 +59,15 @@ const CLICK_TOLERANCE_PX = 5;
 const REFRACTION_BOUNCES = 4;
 // REFRACTION_FRESNEL: 石の縁を白く光らせる強さ（MeshRefractionMaterial の fresnel）。0 で無効
 const REFRACTION_FRESNEL = 0.6;
-// NO_SHADOW_LAYER: 影を落とさない物（薄くした石と、選択を外して不透明へ戻りきっていない石、スポットライトの光の筋と光だまり）を載せるレイヤーの番号（three.js の Layers。0〜31）。
+// NO_SHADOW_LAYER: 影を落とさない石（薄くした石と、選択を外して不透明へ戻りきっていない石）を載せるレイヤーの番号（three.js の Layers。0〜31）。
 // 影（ContactShadows）を撮るカメラはレイヤー 0 しか見ないので、ここへ移した石は影を落とさない（薄い石の下に濃い影だけが残らないように）。
 // 画面を撮るカメラと、押した物を探す raycaster は、このレイヤーも見るようにする（useNoShadowLayer）
 const NO_SHADOW_LAYER = 1;
 // DEFAULT_LAYER: ふだんの石が載るレイヤー（three.js の既定。影を撮るカメラも、画面を撮るカメラもこれを見る）
 const DEFAULT_LAYER = 0;
-// SPOTLIGHT_INTENSITY: スポットライトが点いているときの光の強さ（three.js の光度。減衰なしなので、パールの明るさに直接効く）。
-// 屈折の石（MeshRefractionMaterial）はライトを受けないので、効くのはパールだけ。大きくするとパールが白く飛ぶ（4 では飛んだ）
-const SPOTLIGHT_INTENSITY = 1.5;
-// SPOTLIGHT_PENUMBRA: スポットライトの光の丸の縁のぼけ（0〜1）。大きいほど照らされる範囲の縁がやわらかい
-const SPOTLIGHT_PENUMBRA = 0.85;
-// POOL_HEIGHT_MM: 足元の光だまりの円盤の高さ（mm）。影の板（0.01 mm 下）より上に置き、影の上に暖色を重ねる
-const POOL_HEIGHT_MM = 0.005;
 
 // BACKGROUND_COLOR: 背景の色（真っ白）。商品写真の白ホリ（継ぎ目の無い白い背景）のように、石だけが浮かぶ空間にする。
-// 色の背景はトーンマッピングと露出を通らないので、光量スライダーを動かしても白のまま
+// 色の背景はトーンマッピングと環境マップを通らないので、光量スライダーを動かしても白のまま
 const BACKGROUND_COLOR = "#ffffff";
 
 // CAMERA_MOUSE_BUTTONS: マウスの操作の割り当て。左ドラッグ = 回す、中ボタン・ホイール = 寄る、右ドラッグ = 何もしない。
@@ -118,7 +95,7 @@ const CAMERA_TOUCHES = {
 
 /** JewelsScene の props。 */
 interface JewelsSceneProps {
-  /** 右下のスライダーの値（光量・分散）。 */
+  /** 右下のスライダーの値（光量 = 環境マップの強さ・分散）。 */
   params: JewelParams;
   /** 選んでいる石。`null` のときは全体（文字盤）を見る。 */
   selected: BirthstoneId | null;
@@ -180,12 +157,14 @@ export default function JewelsScene({
     // 形が変わったときだけ求め直す
     [geometries],
   );
-  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さず、描く範囲のずらしとスポットライトもすぐに切り替える。
+  // reducedMotion: OS の「動きを減らす」設定が有効か（有効なら、カメラは飛ばずに切り替わり、選んだ石も回さず、描く範囲のずらしもすぐに切り替える。
   // ほかの石を薄くする変化は動きではないので約 0.8 秒で溶かし、指を乗せた石が浮くのは利用者の操作への小さな反応なので止めない）
   const reducedMotion = usePrefersReducedMotion();
 
-  // 表示している間だけ、写真向けの色の出し方（トーンマッピングと sRGB 出力）に切り替える
-  useStudioLook(params.amb);
+  // 表示している間だけ、写真向けの色の出し方（トーンマッピング・決まった露出・sRGB 出力）に切り替える
+  useStudioLook();
+  // envIntensity: 環境マップ（スタジオの光）の強さの倍率。光量スライダーで変わる（露出は変えない）
+  const envIntensity = envIntensityFor(params.amb);
 
   // controls: カメラを動かす camera-controls。インスタンスが作り直されたとき（既定のカメラが替わったときなど）に
   // カメラの移動をやり直せるよう、ref ではなく state に持つ
@@ -204,7 +183,7 @@ export default function JewelsScene({
   );
   // スマホ向けの配置で解説カードのシートが開いている間は、石がシートに隠れないよう描く範囲を上へずらす
   useViewShift(viewShift, reducedMotion);
-  // 影を落とさない物のレイヤー（薄くした石と、スポットライトの光の筋・光だまり）も画面に描き、薄くした石を押せるようにする
+  // 影を落とさない石のレイヤー（薄くした石）も画面に描き、薄くした石を押せるようにする
   useNoShadowLayer();
   // 月のラベルを毎フレーム石のそばへ動かす（石を選んでいる間は隠す）。
   // useViewShift より後に呼ぶ（どちらも優先度 0 の useFrame で、登録順に動く。先に描く範囲のずらしを反映した行列で投影しないと、シートの開け閉めの間ラベルが 1 フレーム遅れる）
@@ -278,8 +257,6 @@ export default function JewelsScene({
         // 影を描く画像の 1 辺のピクセル数。大きいほど細かいが、毎フレームの描く手間が増える
         resolution={512}
       />
-      {/* 選んだ石を真上から照らすスポットライトと、白い背景の上に淡く見せる光の筋と足元の光だまり */}
-      <JewelSpotlight selected={selected} reducedMotion={reducedMotion} />
       {/* 12 個の誕生石 */}
       {BIRTHSTONES.map((stone) => (
         <JewelStone
@@ -288,6 +265,7 @@ export default function JewelsScene({
           geometry={geometries[stone.id]}
           placement={placements[stone.id]}
           env={env}
+          envIntensity={envIntensity}
           fire={params.fire}
           selected={selected}
           canSpin={!reducedMotion}
@@ -330,8 +308,8 @@ function useViewShift(target: number, reducedMotion: boolean): void {
   });
 }
 
-// useNoShadowLayer: 今のカメラと raycaster（押した物を探す光線）に、影を落とさない物のレイヤー（NO_SHADOW_LAYER。薄くした石と、スポットライトの光の筋・光だまり）も見させるフック。
-// このフックが無いと、薄くした石・光の筋・光だまりが画面から消える
+// useNoShadowLayer: 今のカメラと raycaster（押した物を探す光線）に、影を落とさない石のレイヤー（NO_SHADOW_LAYER。薄くした石）も見させるフック。
+// このフックが無いと、薄くした石が画面から消える
 // カメラが替わったとき・シーンを離れるときに、前のカメラからは外す（太陽・浜辺のシーンのカメラに残さないため）
 function useNoShadowLayer(): void {
   // camera: 今の既定のカメラ
@@ -401,13 +379,14 @@ function useMonthLabels(
 
 // useStudioLook: 表示している間だけ、レンダラーを写真向けの色の出し方にするフック。
 // Canvas は太陽・浜辺のために linear（sRGB に変換しない）+ flat（トーンマッピングしない）で作っているが、
-// 宝石は写真のような色で見せたいので、トーンマッピング（Neutral）と sRGB 出力に切り替え、離れるときに戻す。
+// 宝石は写真のような色で見せたいので、トーンマッピング（Neutral）・決まった露出（STUDIO_EXPOSURE）・sRGB 出力に切り替え、離れるときに戻す。
+// 露出は光量スライダーでは変えない（スライダーは環境マップの強さを変える。JewelStone の envIntensity）。
 // R3F は Canvas を作るときに一度しかこの設定を反映しないので、ここで書き換えても上書きされない
-function useStudioLook(amb: number): void {
+function useStudioLook(): void {
   // R3F が用意したレンダラー
   const gl = useThree((state) => state.gl);
   // 表示したときに切り替え、離れるときに元へ戻す。layout effect にして、
-  // 最初のフレームからトーンマッピングと sRGB 出力で描く（露出は下の useEffect が入れる。passive effect だと、最初の 1 フレームだけトーンマッピングなしの石が出るおそれがある）
+  // 最初のフレームからトーンマッピングと sRGB 出力で描く（passive effect だと、最初の 1 フレームだけトーンマッピングなしの石が出るおそれがある）
   useLayoutEffect(() => {
     // 元の設定を覚えておく
     const previous = {
@@ -421,6 +400,8 @@ function useStudioLook(amb: number): void {
     // Neutral トーンマッピング（Khronos PBR Neutral）。商品写真向けに、明るい部分でも色相と彩度を保ちやすい。
     // AgX（Blender の Cycles の標準の色変換）は明るい部分を白へ寄せるので、屈折で強く光るルビーなどが桃色に褪せて見えた
     gl.toneMapping = THREE.NeutralToneMapping;
+    // 露出は 2 倍（+1 段）で固定する（Blender の jewels.blend と同じ）
+    gl.toneMappingExposure = STUDIO_EXPOSURE;
     // 画面へは sRGB で出す（色を人の目に合った明るさにする）
     gl.outputColorSpace = THREE.SRGBColorSpace;
     // 後始末: 元の設定に戻す（太陽・浜辺のシーンの色が変わらないように）
@@ -433,11 +414,6 @@ function useStudioLook(amb: number): void {
       gl.outputColorSpace = previous.colorSpace;
     };
   }, [gl]);
-  // 光量スライダーが変わったら露出を変える（毎フレームではなく、値が変わったときだけ）
-  useEffect(() => {
-    // 露出を設定する
-    gl.toneMappingExposure = exposureFor(amb);
-  }, [gl, amb]);
 }
 
 // useCameraFlight: 選んだ石へカメラを動かすフック。選んでいなければ全体（文字盤）を見る位置へ戻す。
@@ -480,8 +456,10 @@ interface JewelStoneProps {
   geometry: THREE.BufferGeometry;
   /** 置く高さと中心の高さ。 */
   placement: StonePlacement;
-  /** 屈折の計算に使う環境マップ。 */
+  /** 屈折の計算とパールの映り込みに使う環境マップ。 */
   env: THREE.Texture;
+  /** 環境マップの強さの倍率（光量スライダーから `envIntensityFor` で求めた値。1 でスタジオの光そのまま）。 */
+  envIntensity: number;
   /** 分散スライダーの値（0〜1）。 */
   fire: number;
   /** 選ばれている石（選ばれている石はゆっくり回り、ほかの石は白い背景へ溶けるように薄くなる）。何も選ばれていなければ `null`。 */
@@ -498,6 +476,7 @@ function JewelStone({
   geometry,
   placement,
   env,
+  envIntensity,
   fire,
   selected,
   canSpin,
@@ -516,17 +495,20 @@ function JewelStone({
   const [x, , z] = ringPosition(stone.month);
   // 長い向きを外へ向ける回転
   const yaw = stoneYaw(stone.month);
+  // colorIntensity: 色に掛ける環境マップの強さ。パールは色ではなく envMapIntensity で強さを変えるので、いつも 1（スライダーを動かしても色を作り直さない）
+  const colorIntensity = stone.cut === "sphere" ? 1 : envIntensity;
   // baseColor: マテリアルの色（線形 RGB）。
-  // 透明な石は屈折した光に掛ける色（色味だけを残した色。数値 3 つで作ると色空間の変換がかからない）、
-  // パールは地の色（16 進数の sRGB から、three.js の色管理が線形に変換する）
+  // 透明な石は、屈折した光に掛ける色（色味だけを残した色）に環境マップの強さを掛けた色（数値 3 つで作ると色空間の変換がかからない）。
+  // MeshRefractionMaterial には環境マップの強さの設定が無く、色が「石の色 × 拾った光」で決まるので、色に掛けて強さを変える（lib/scenes/jewels.ts の refractionColor）。
+  // パールは地の色（16 進数の sRGB から、three.js の色管理が線形に変換する。強さは下の envMapIntensity で変える）
   const baseColor = useMemo(
     // 石の種類で作り方を分ける
     () =>
       stone.cut === "sphere"
         ? new THREE.Color(stone.color)
-        : new THREE.Color(...tintFromColor(stone.color)),
-    // 石の色とカットが変わったときだけ作り直す
-    [stone.color, stone.cut],
+        : new THREE.Color(...refractionColor(stone.color, colorIntensity)),
+    // 石の色・カット・色に掛ける強さが変わったときだけ作り直す（透明な石は、光量スライダーの値が変わるたびに作り直す。R3F は新しい色を uniform へ写すだけなので、シェーダーは作り直されない）
+    [stone.color, stone.cut, colorIntensity],
   );
   // isSelected: この石が選ばれているか
   const isSelected = selected === stone.id;
@@ -638,6 +620,8 @@ function JewelStone({
           transparent
           // 映り込みに使う環境マップ（屈折の石と同じスタジオ）。scene.environment は使わないので直接渡す（渡さなければ映り込みが無い）
           envMap={env}
+          // 環境マップの強さ（光量スライダー）。ライトを置いていないので、パールの明るさはこれだけで決まる
+          envMapIntensity={envIntensity}
           // 真珠層のやわらかいツヤ
           roughness={0.2}
           // 金属ではない
@@ -663,7 +647,7 @@ function JewelStone({
         // 透明な石: BVH で石の中の反射・屈折を追いかけ、環境マップから光を拾う。
         // 不透明度は、useFrame の applyStoneOpacity が毎フレーム書き換える（props では渡さない。描き直すたびに 1 へ戻さないため）
         <MeshRefractionMaterial
-          // 屈折した光に掛ける色（石の色味）
+          // 屈折した光に掛ける色（石の色味 × 環境マップの強さ）
           color={baseColor}
           // 薄くできるよう、いつも半透明として描く（不透明度 1 ならほぼ不透明と同じ見た目で、描く順が奥から手前になるだけ。
           // 選んだときだけ切り替えると、three.js がシェーダーを作り直して一瞬止まるため）
@@ -684,154 +668,5 @@ function JewelStone({
         />
       )}
     </mesh>
-  );
-}
-
-/** JewelSpotlight の props。 */
-interface JewelSpotlightProps {
-  /** 照らす石。`null` ならスポットライトを消す。 */
-  selected: BirthstoneId | null;
-  /** OS の「動きを減らす」設定が有効なら `true`（点く・消える・次の石へ移るのを、その場で切り替える）。 */
-  reducedMotion: boolean;
-}
-
-// JewelSpotlight: 選んだ石を真上から照らすスポットライト。three.js の spotLight（パールを照らす）と、
-// 白い背景の上でも見えるよう、暖かい色を薄く重ねて塗る光の筋（円すい）と足元の光だまり（円盤）。計算は lib/scenes/jewelSpotlight.ts。
-// 屈折の石（MeshRefractionMaterial）はライトを受けないので、石が照らされて見えるのは、筋と光だまりの暖色と、ほかの石を薄くすることで表す
-function JewelSpotlight({ selected, reducedMotion }: JewelSpotlightProps) {
-  // light: three.js のスポットライト（毎フレーム、位置・向け先・強さを書き換える）
-  const light = useRef<THREE.SpotLight>(null);
-  // beam: 光の筋の円すい（毎フレーム、位置と表示を書き換える）
-  const beam = useRef<THREE.Mesh>(null);
-  // pool: 足元の光だまりの円盤（毎フレーム、位置と表示を書き換える）
-  const pool = useRef<THREE.Mesh>(null);
-  // state: フレーム間で持ち越す明るさと位置（advanceSpotlight が直接書き換える）。useState の初期化関数で一度だけ作る
-  const [state] = useState(createSpotlightState);
-  // beamMaterial: 光の筋のマテリアル。一度だけ作る
-  const [beamMaterial] = useState(createBeamMaterial);
-  // poolMaterial: 光だまりのマテリアル。一度だけ作る
-  const [poolMaterial] = useState(createPoolMaterial);
-  // 消えるときに 2 つのマテリアルを片付ける（開発時の Strict Mode で片付けたあとに使われても、three.js が作り直す）
-  useEffect(
-    // 後始末だけをする
-    () => () => {
-      // 筋
-      beamMaterial.dispose();
-      // 光だまり
-      poolMaterial.dispose();
-    },
-    // マテリアルが替わったときだけ（実際には替わらない）
-    [beamMaterial, poolMaterial],
-  );
-  // aim: 照らす石の置き方（石を選んでいなければ null）。選んだ石が替わったときだけ求め直す
-  const aim = useMemo(
-    // 選んだ石の月の位置の真上
-    () => (selected ? spotlightAim(birthstoneById(selected).month) : null),
-    // 選んだ石が替わったときだけ
-    [selected],
-  );
-
-  // 毎フレーム、明るさと位置を目標へ近づけ、ライト・筋・光だまりに反映する
-  useFrame((_, delta) => {
-    // 明るさと位置を進める（動きを減らす設定なら、その場で目標へ。性能のため state を直接書き換える）
-    advanceSpotlight(state, aim, reducedMotion ? Number.POSITIVE_INFINITY : delta);
-    // isVisible: 筋と光だまりを描くか（消えているときは描く手間を省く）
-    const isVisible = state.level > BEAM_VISIBLE_LEVEL;
-    // スポットライト
-    const spot = light.current;
-    // まだ無ければ何もしない
-    if (spot) {
-      // 光源の位置（性能のため直接書き換える）
-      spot.position.copy(state.position);
-      // 向ける先（target はシーンに入れていないので、行列を自分で更新する）
-      spot.target.position.copy(state.target);
-      // 向ける先の行列を最新にする
-      spot.target.updateMatrixWorld();
-      // 強さ（消えているときは 0。ライトの数を変えるとシェーダーが作り直されるので、外さずに 0 にする）
-      spot.intensity = SPOTLIGHT_INTENSITY * state.level;
-    }
-    // 光の筋
-    const cone = beam.current;
-    // まだ無ければ何もしない
-    if (cone) {
-      // 円すいの中心は、光源と床の真ん中（性能のため直接書き換える）
-      cone.position.set(state.position.x, SPOTLIGHT_HEIGHT_MM / 2, state.position.z);
-      // 消えているときは描かない
-      cone.visible = isVisible;
-    }
-    // 光だまり
-    const disc = pool.current;
-    // まだ無ければ何もしない
-    if (disc) {
-      // 光を向けている床の位置に置く（性能のため直接書き換える）
-      disc.position.set(state.target.x, POOL_HEIGHT_MM, state.target.z);
-      // 消えているときは描かない
-      disc.visible = isVisible;
-    }
-    // 筋の濃さを明るさに合わせる（性能のため uniform を直接書き換える）
-    setGlowStrength(beamMaterial, state.level, BEAM_OPACITY);
-    // 光だまりの濃さも合わせる
-    setGlowStrength(poolMaterial, state.level, POOL_OPACITY);
-  });
-
-  return (
-    <>
-      {/* 石の真上から真下へ向けるスポットライト。減衰なし（decay 0）・届く距離の制限なし（distance 0）にして、強さを高さに左右されないようにする */}
-      <spotLight
-        // 毎フレーム位置・向け先・強さを書き換えるための参照
-        ref={light}
-        // 光の広がりの角度
-        angle={SPOTLIGHT_ANGLE_RAD}
-        // 光の丸の縁のぼけ
-        penumbra={SPOTLIGHT_PENUMBRA}
-        // 距離による減衰をしない
-        decay={0}
-        // 届く距離を制限しない
-        distance={0}
-        // 光の色（筋・光だまりと同じ暖かい色）
-        color={SPOTLIGHT_COLOR}
-        // 最初は消えている（useFrame が明るさに合わせて書き換える）
-        intensity={0}
-      />
-      {/* 光の筋（上が細く、床で光の円すいの太さになる円すい）。
-          押したときの当たり判定は、R3F が押す処理（onClick など）を持つ物にしか行わないので、筋が手前にあっても奥の石を押せる。
-          描く順は、石の下の影（-1）のあと、光だまり（-0.4）と石（0）より先（-0.5）。筋は奥行きを書き込まないので、あとから描く石が筋の上に描かれ、
-          石の手前を通る筋が石の色を暖色に濁らせない（選んだ石の色を、いちばん忠実に見せるため） */}
-      <mesh
-        // 毎フレーム位置と表示を書き換えるための参照
-        ref={beam}
-        // 暖かい色を重ねて塗る筋のマテリアル
-        material={beamMaterial}
-        // 最初は描かない（点いたら useFrame が描くようにする）
-        visible={false}
-        // 影（-1）のあと、石（0）より先に描く
-        renderOrder={-0.5}
-        // 影を撮るカメラに写らないレイヤーに載せる（筋の暗い形が石の影に混ざらないように。面の向きで偶然写らないことに頼らない）
-        layers={NO_SHADOW_LAYER}
-      >
-        {/* 上端の半径・下端の半径・高さ（光源から床まで）・周りの分割数（細い筋なので 32 で丸く見える）・高さの分割数・ふたなし */}
-        <cylinderGeometry
-          args={[BEAM_TOP_RADIUS_MM, BEAM_BOTTOM_RADIUS_MM, SPOTLIGHT_HEIGHT_MM, 32, 1, true]}
-        />
-      </mesh>
-      {/* 足元の光だまり（床に寝かせた円盤）。影のあとに描き、影の上に暖色を重ねる */}
-      <mesh
-        // 毎フレーム位置と表示を書き換えるための参照
-        ref={pool}
-        // 暖かい色を重ねて塗る光だまりのマテリアル
-        material={poolMaterial}
-        // 円盤（XY 平面）を床（XZ 平面）に寝かせる
-        rotation={[-Math.PI / 2, 0, 0]}
-        // 最初は描かない（点いたら useFrame が描くようにする）
-        visible={false}
-        // 影（-1）と筋（-0.5）のあと、石（0）より先に描く（カメラの向きによる並べ替えに頼らず、いつも石の下に敷く）
-        renderOrder={-0.4}
-        // 影を撮るカメラに写らないレイヤーに載せる（光だまりの円盤が影に混ざらないように）
-        layers={NO_SHADOW_LAYER}
-      >
-        {/* 円盤の形（半径 mm・周りの分割数。48 分割なら縁の角ばりが見えない） */}
-        <circleGeometry args={[POOL_RADIUS_MM, 48]} />
-      </mesh>
-    </>
   );
 }

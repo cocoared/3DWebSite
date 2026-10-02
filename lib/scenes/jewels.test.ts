@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as THREE from "three";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
 import { describe, expect, test, vi } from "vitest";
 import { BIRTHSTONE_IDS, BIRTHSTONES, type BirthstoneId, birthstoneById } from "@/lib/birthstones";
-import { COMPACT_MAX_HEIGHT_PX, HERO } from "@/lib/scene";
+import { COMPACT_MAX_HEIGHT_PX, DEFAULT_PARAMS, HERO, SLIDERS } from "@/lib/scene";
 import {
   aberrationFor,
   adjacentStone,
@@ -17,7 +18,7 @@ import {
   CAMERA_SMOOTH_TIME,
   castsShadow,
   disposeRefractionBvh,
-  exposureFor,
+  envIntensityFor,
   FADED_OPACITY,
   FIRE_GAIN,
   FOCUS_DISTANCE_FACTOR,
@@ -39,12 +40,14 @@ import {
   overviewHero,
   pickStoneGeometries,
   RING_RADIUS_MM,
+  refractionColor,
   ringAngle,
   ringPosition,
   SHADOW_RETURN_OPACITY,
   SHEET_VIEW_SHIFT,
   SPIN_SPEED,
   STONE_LIFT_MM,
+  STUDIO_EXPOSURE,
   stoneOpacity,
   stonePlacement,
   stoneYaw,
@@ -303,7 +306,7 @@ describe("nearestAngle", () => {
 });
 
 // スライダーの値から、マテリアルとレンダラーに渡す値を作る
-describe("aberrationFor / exposureFor / tintFromColor", () => {
+describe("aberrationFor / envIntensityFor / tintFromColor / refractionColor", () => {
   // 分散スライダーが 0 でも、MeshRefractionMaterial には 0 を渡さない（0 と正の値を行き来すると drei の実装で屈折が壊れるため）
   test("分散スライダーが 0 のときも MIN_ABERRATION（正の値）になる", () => {
     // Assert: 最小値になる
@@ -394,14 +397,58 @@ describe("aberrationFor / exposureFor / tintFromColor", () => {
     expect(aberrationFor(0, 1.53, 1)).toBe(MIN_ABERRATION);
   });
 
-  // 光量スライダーは露出の倍率。Blender の jewels.blend の露出（+1 段 = 2 倍）に合わせた基準にかける
-  test("exposureFor は光量 1 で 2 倍（+1 段）になり、負の値は 0 にする", () => {
-    // Assert: 光量 1
-    expect(exposureFor(1)).toBeCloseTo(2);
-    // Assert: 光量 0.5
-    expect(exposureFor(0.5)).toBeCloseTo(1);
-    // Assert: 負の値
-    expect(exposureFor(-1)).toBe(0);
+  // 光量スライダーは、環境マップ（スタジオの光）の強さの倍率。露出は STUDIO_EXPOSURE に固定する
+  test.each<[number, number]>([
+    // 光量 1: スタジオの光そのまま
+    [1, 1],
+    // 光量 2.5: 2.5 倍
+    [2.5, 2.5],
+    // 光量 3（スライダーの上限）: 3 倍。上限で丸めない（スライダーの範囲は lib/scene.ts の SLIDERS が決める）
+    [3, 3],
+    // 光量 0: 光なし
+    [0, 0],
+    // 負の値は 0 にする
+    [-1, 0],
+  ])("envIntensityFor(%d) は %d", (amb, expected) => {
+    // Assert: 強さの倍率
+    expect(envIntensityFor(amb)).toBe(expected);
+  });
+
+  // 数でない値（NaN・無限大）がシェーダーへ渡ると、石とパールが真っ黒や真っ白に壊れるので、スタジオそのままの強さにする。
+  // 負の無限大も「負の値は 0」ではなく 1 にする（壊れた入力として扱い、どの向きの無限大でもスタジオそのままに戻す）
+  test.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+    "envIntensityFor(%d) は 1（スタジオそのまま）",
+    (amb) => {
+      // Assert: 1 に戻す
+      expect(envIntensityFor(amb)).toBe(1);
+    },
+  );
+
+  // 露出は、Blender の jewels.blend の露出（blender/build_jewels.py の VIEW_EXPOSURE。段数）に合わせた値で固定する（光量スライダーでは変えない）。
+  // +1 段 = 2 倍なので、2 の VIEW_EXPOSURE 乗と一致するかを、Python のファイルから値を読んで照らし合わせる
+  test("STUDIO_EXPOSURE は Blender の露出（VIEW_EXPOSURE 段）と同じ倍率", () => {
+    // Arrange: Blender のスクリプトを読む
+    const script = readFileSync(join(process.cwd(), "blender", "build_jewels.py"), "utf8");
+    // 「VIEW_EXPOSURE = 数」の行から数を取り出す
+    const match = /^VIEW_EXPOSURE = ([\d.]+)$/m.exec(script);
+    // Assert: 行が見つかる
+    expect(match).not.toBeNull();
+    // Assert: 2 の段数乗が、Web の露出と同じ
+    expect(STUDIO_EXPOSURE).toBeCloseTo(2 ** Number(match?.[1]));
+  });
+
+  // 光量スライダーの初期値と範囲（lib/scene.ts）が、環境マップの強さの約束と合っているか
+  test("光量スライダーの初期値はスタジオそのまま（1）で、範囲は 0〜3 倍", () => {
+    // Arrange: 誕生石の光量スライダーの定義
+    const slider = SLIDERS.jewel.find((def) => def.field === "amb");
+    // Assert: 定義がある
+    expect(slider).toBeDefined();
+    // Assert: 初期値は 1 倍
+    expect(envIntensityFor(DEFAULT_PARAMS.jewel.amb)).toBe(1);
+    // Assert: 下端は 0 倍（光なし。負の値にはならないので、envIntensityFor の 0 への切り上げは入口の守りだけ）
+    expect(envIntensityFor(slider?.min ?? Number.NaN)).toBe(0);
+    // Assert: 上端は 3 倍
+    expect(envIntensityFor(slider?.max ?? Number.NaN)).toBe(3);
   });
 
   // 屈折のマテリアルに掛ける色は、線形 RGB で一番明るい成分が 1 になるよう正規化する
@@ -446,6 +493,33 @@ describe("aberrationFor / exposureFor / tintFromColor", () => {
     expect(b).toBeCloseTo(plain ** TINT_POWER, 4);
     // Assert: 元より濃くなっている（1 より大きい乗数で小さくなる）
     expect(g).toBeLessThan(plain);
+  });
+
+  // 屈折の石の色は「石の色 × 環境マップから拾った光」なので、色に強さを掛けると環境マップの強さを変えたのと同じになる
+  test("refractionColor は石の色（tintFromColor）に環境マップの強さを掛ける", () => {
+    // Arrange: ルビーの色
+    const tint = tintFromColor(birthstoneById("ruby").color);
+    // Act: 強さ 2.5 で求める
+    const color = refractionColor(birthstoneById("ruby").color, 2.5);
+    // Assert: 赤・緑・青の 3 成分（空の配列で下の比べ合わせが素通りしないように）
+    expect(color).toHaveLength(3);
+    // Assert: 各成分（赤・緑・青）が 2.5 倍
+    for (const [index, value] of color.entries()) {
+      // 1 成分ずつ比べる
+      expect(value).toBeCloseTo(tint[index] * 2.5);
+    }
+  });
+
+  // 強さ 1 はスタジオそのままなので、石の色（tintFromColor）と同じ
+  test("refractionColor は強さ 1 なら tintFromColor と同じ", () => {
+    // Assert: 同じ値
+    expect(refractionColor("#ff8080", 1)).toEqual(tintFromColor("#ff8080"));
+  });
+
+  // 強さ 0 は光なし（真っ黒。縁の白い光 fresnel は別に足される）
+  test("refractionColor は強さ 0 なら黒になる", () => {
+    // Assert: 黒
+    expect(refractionColor("#ff8080", 0)).toEqual([0, 0, 0]);
   });
 });
 
@@ -1268,5 +1342,45 @@ describe("public/jewels の資産", () => {
     const head = readFileSync(join(PUBLIC_DIR, JEWELS_ENV_URL)).toString("ascii", 0, 10);
     // Assert: 形式の目印
     expect(head).toBe("#?RADIANCE");
+  });
+
+  // 誕生石シーンは真っ白な空間なので、環境マップの下半分（床と壁）も白くしてある（blender/build_jewels.py の WORLD_GRADIENT）。
+  // 床が暗いと、石の中で反射して下へ抜ける光線が黒を拾い、ダイヤのテーブル面の中心などが暗く沈む（床がほぼ黒の 0.01〜0.025 だったときに起きた）
+  test("studio.hdr の下半分（床と壁）は、明るさの中央値も下位 10% の値も 0.3 以上", () => {
+    // Arrange: ファイルを読む
+    const file = readFileSync(join(PUBLIC_DIR, JEWELS_ENV_URL));
+    // three.js の HDR の読み込み（GPU を使わずに、ピクセルの値だけを取り出せる）。32 ビットの浮動小数で受け取る
+    const loader = new HDRLoader().setDataType(THREE.FloatType);
+    // 画像の幅・高さ・ピクセル（RGBA の順。1 行目が真上）。ArrayBuffer の該当部分だけを渡す
+    const { width, height, data } = loader.parse(
+      file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength),
+    );
+    // 型の上では幅・高さ・ピクセルは省略できるので、実行時に確かめて絞る（半精度の Uint16Array などを黙って読まないように）
+    if (!width || !height || !(data instanceof Float32Array)) {
+      // 読めなかったときは、何が足りないかを知らせて止める
+      throw new Error("studio.hdr を 32 ビットの浮動小数のピクセルとして読めなかった");
+    }
+    // Assert: ピクセルは RGBA の 4 つずつ（下の位置の計算の前提）
+    expect(data.length).toBe(width * height * 4);
+    // Act: 下半分（水平より下の向き）の各ピクセルの明るさ（輝度）
+    const luminances = new Float32Array((height - Math.floor(height / 2)) * width);
+    // 書き込む位置
+    let count = 0;
+    // 下半分の行
+    for (let y = Math.floor(height / 2); y < height; y++) {
+      // 1 行の各ピクセル
+      for (let x = 0; x < width; x++) {
+        // そのピクセルの先頭の位置（RGBA の 4 つずつ）
+        const i = (y * width + x) * 4;
+        // 人の目の感じ方に合わせた重み（Rec. 709）で輝度にする
+        luminances[count++] = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      }
+    }
+    // 小さい順に並べる（Float32Array の sort は数の順）
+    luminances.sort();
+    // Assert: 真ん中の値が、白い床と壁の明るさ（露出 2 倍でほぼ白く写る 0.5 前後）
+    expect(luminances[Math.floor(count / 2)]).toBeGreaterThanOrEqual(0.3);
+    // Assert: 下から 10% の値も同じ下限以上（床の一部だけが暗い帯になっても見逃さない）
+    expect(luminances[Math.floor(count / 10)]).toBeGreaterThanOrEqual(0.3);
   });
 });
