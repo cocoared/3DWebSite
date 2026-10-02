@@ -66,10 +66,14 @@ export const FADED_OPACITY = 0.15;
  */
 export const CAMERA_SMOOTH_TIME = 0.8;
 
+/**
+ * 誕生石シーンのレンダラーの露出（`toneMappingExposure`。2 倍 = +1 段）。Blender の jewels.blend の露出（+1 段）と同じ。
+ * 光量スライダーでは変えない（スライダーは環境マップの強さ `envIntensityFor` を変える）。
+ */
+export const STUDIO_EXPOSURE = 2;
+
 // FOCUS_ELEVATION: 石を選んだときにカメラが石を見下ろす角度（ラジアン）。0.5 ≒ 29°。少し低めにして、テーブル面だけでなく切子面の側面も見せる
 const FOCUS_ELEVATION = 0.5;
-// BASE_EXPOSURE: 光量スライダー 1 のときの露出（2 倍 = +1 段）。Blender の jewels.blend の露出（+1 段）と同じ
-const BASE_EXPOSURE = 2;
 // SPIN_SETTLE: 選ばれなくなった石が元の向きへ戻る速さ（大きいほど早く戻る。MathUtils.damp の係数）
 const SPIN_SETTLE = 3;
 // LIFT_SMOOTHING: 浮き上がり・戻りの速さ（MathUtils.damp の係数）
@@ -357,20 +361,23 @@ export function aberrationFor(dispersion: number, ior: number, fire: number): nu
 }
 
 /**
- * 光量スライダーから、レンダラーの露出（`toneMappingExposure`）を求める。光量 1 で 2 倍（Blender の jewels.blend の露出 +1 段と同じ）。
+ * 光量スライダーから、環境マップ（スタジオの光。`studio.hdr`）の強さの倍率を求める。1 でスタジオの光そのまま。
+ * 屈折の石には `refractionColor` で色に掛け、パールには `envMapIntensity` として渡す。露出（`STUDIO_EXPOSURE`）は変えない。
  *
- * @param amb - 光量スライダーの値（0〜3。負の値は 0 にする）
+ * @param amb - 光量スライダーの値（0〜3。負の値は 0 にする。NaN や無限大は 1 にする）
  */
-export function exposureFor(amb: number): number {
-  // 基準の露出に光量を掛ける（負の値は 0）
-  return Math.max(0, amb) * BASE_EXPOSURE;
+export function envIntensityFor(amb: number): number {
+  // 数でない値がシェーダーへ渡ると石とパールが壊れて写るので、スタジオそのままの強さにする
+  if (!Number.isFinite(amb)) return 1;
+  // 負の値は 0（光なし）
+  return Math.max(0, amb);
 }
 
 /**
  * 石の色（`#rrggbb`）から、屈折のマテリアルに掛ける色（線形 RGB）を作る。
  * 一番明るい成分が 1 になるよう割って色味だけを残し（Cycles の吸収ボリュームの色の作り方と同じ）、
  * さらに `TINT_POWER` 乗して、石の中を通るほど色が濃くなる吸収に近い深さを出す。
- * 明るさは環境マップと露出で決まるので、暗い色の石でも光が弱まりすぎないようにする。
+ * 明るさは環境マップ・その強さ（光量スライダー。`refractionColor`）・露出で決まるので、暗い色の石でも光が弱まりすぎないようにする。
  *
  * @returns 線形 RGB（各成分 0〜1。一番明るい成分は 1）
  */
@@ -383,6 +390,22 @@ export function tintFromColor(hex: string): Vec3 {
   const deepen = (channel: number) => (channel / peak) ** TINT_POWER;
   // 赤・緑・青それぞれに当てはめる
   return [deepen(color.r), deepen(color.g), deepen(color.b)];
+}
+
+/**
+ * 屈折の石（MeshRefractionMaterial）の `color` に渡す色（線形 RGB）を求める。石の色（`tintFromColor`）に環境マップの強さを掛ける。
+ * drei の MeshRefractionMaterial は「`color` × 環境マップから拾った光」で色を出す（環境マップの強さを変える uniform は無い）ので、
+ * 色に掛けると、環境マップの強さを変えたのと同じになる。縁を白く光らせる `fresnel` は、この色とは別に白を混ぜるので強さに左右されない。
+ *
+ * @param hex - 石の色（`#rrggbb`）
+ * @param intensity - 環境マップの強さの倍率。`envIntensityFor` を通した、有限で 0 以上の値を渡す（NaN や無限大はそのまま成分に伝わる）
+ * @returns 線形 RGB の新しい配列（呼ぶたびに作る）。各成分は 0〜`intensity` で、光量 1 を超えると 1 を超える（`THREE.Color` に数値 3 つで渡す前提）
+ */
+export function refractionColor(hex: string, intensity: number): Vec3 {
+  // 石の色味
+  const [r, g, b] = tintFromColor(hex);
+  // 各成分に強さを掛ける
+  return [r * intensity, g * intensity, b * intensity];
 }
 
 /**
