@@ -423,9 +423,9 @@ describe("aberrationFor / envIntensityFor / tintFromColor / refractionColor", ()
   test.each<[number, number]>([
     // 光量 1: スタジオの光そのまま
     [1, 1],
-    // 光量 2.5: 2.5 倍
+    // 光量 2.5（スライダーの範囲 0.45〜1 の外）: 2.5 倍
     [2.5, 2.5],
-    // 光量 3（スライダーの上限）: 3 倍。上限で丸めない（スライダーの範囲は lib/scene.ts の SLIDERS が決める）
+    // 光量 3（スライダーの範囲 0.45〜1 の外）: 3 倍。範囲で丸めない（範囲は lib/scene.ts の SLIDERS が決め、envIntensityFor は知らない）
     [3, 3],
     // 光量 0: 光なし
     [0, 0],
@@ -460,17 +460,17 @@ describe("aberrationFor / envIntensityFor / tintFromColor / refractionColor", ()
   });
 
   // 光量スライダーの初期値と範囲（lib/scene.ts）が、環境マップの強さの約束と合っているか
-  test("光量スライダーの初期値はスタジオそのまま（1）で、範囲は 0〜3 倍", () => {
+  test("光量スライダーの初期値はスタジオそのまま（1）で、範囲は 0.45〜1 倍", () => {
     // Arrange: 誕生石の光量スライダーの定義
     const slider = SLIDERS.jewel.find((def) => def.field === "amb");
     // Assert: 定義がある
     expect(slider).toBeDefined();
     // Assert: 初期値は 1 倍
     expect(envIntensityFor(DEFAULT_PARAMS.jewel.amb)).toBe(1);
-    // Assert: 下端は 0 倍（光なし。負の値にはならないので、envIntensityFor の 0 への切り上げは入口の守りだけ）
-    expect(envIntensityFor(slider?.min ?? Number.NaN)).toBe(0);
-    // Assert: 上端は 3 倍
-    expect(envIntensityFor(slider?.max ?? Number.NaN)).toBe(3);
+    // Assert: 下端は 0.45 倍（ユーザーの指定）
+    expect(envIntensityFor(slider?.min ?? Number.NaN)).toBe(0.45);
+    // Assert: 上端は 1 倍（スタジオの光そのまま。これより明るくはしない）
+    expect(envIntensityFor(slider?.max ?? Number.NaN)).toBe(1);
   });
 
   // 屈折のマテリアルに掛ける色は、線形 RGB で一番明るい成分が 1 になるよう正規化する
