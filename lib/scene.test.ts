@@ -58,6 +58,27 @@ describe("lib/scene の定数", () => {
     }
   });
 
+  // 見出しのタイトルの上に「Scene 01 — Solar」のような上付きラベルを出さない（ユーザーの要望で消した）
+  test("どのシーンの見出しにも、上付きラベル（eyebrow）が無い", () => {
+    // 各シーンについて確認する
+    for (const id of tabIds) {
+      // eyebrow という項目そのものを持たない
+      expect(HERO[id]).not.toHaveProperty("eyebrow");
+    }
+  });
+
+  // 誕生石シーンの説明文は、月と石の数を漢数字ではなく数字で書く（ユーザーの要望）
+  test("誕生石シーンの説明文は、月と石の数を数字で書く", () => {
+    // Assert: 最初の月を数字で書く
+    expect(HERO.jewel.tag).toContain("1月のガーネット");
+    // Assert: 最後の月を数字で書く
+    expect(HERO.jewel.tag).toContain("12月のブルートパーズ");
+    // Assert: 石の数を数字で書く
+    expect(HERO.jewel.tag).toContain("12の誕生石");
+    // Assert: 漢数字が残っていない（ほかのシーンの説明文は漢数字を使ってよいので、誕生石だけを確かめる）
+    expect(HERO.jewel.tag).not.toMatch(/[一二三四五六七八九十]/);
+  });
+
   // スライダーの field 名が初期値のプロパティ名と一致しているか（一致しないとスライダーを動かしても何も変わらない）
   test("各スライダーの field に対応する初期値が数値で存在する", () => {
     // 各シーンについて確認する
@@ -96,6 +117,11 @@ describe("lib/scene の定数", () => {
       expect(slider.min).toBeLessThan(slider.max);
       // 刻み幅は正の数
       expect(slider.step).toBeGreaterThan(0);
+      // 最小値から最大値までが刻み幅でちょうど割り切れる（割り切れないと、つまみが最大値に届かない）。
+      // 小数の誤差（例: 0.55 / 0.05 = 11.000000000000002）は 1e-9 まで許す
+      const steps = (slider.max - slider.min) / slider.step;
+      // 段の数が整数に十分近い
+      expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-9);
     }
   });
 });

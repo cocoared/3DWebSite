@@ -406,7 +406,7 @@ export function aberrationFor(dispersion: number, ior: number, fire: number): nu
  * 光量スライダーから、環境マップ（スタジオの光。`studio.hdr`）の強さの倍率を求める。1 でスタジオの光そのまま。
  * 屈折の石には `refractionColor` で色に掛け、パールには `envMapIntensity` として渡す。露出（`STUDIO_EXPOSURE`）は変えない。
  *
- * @param amb - 光量スライダーの値（0〜3。負の値は 0 にする。NaN や無限大は 1 にする）
+ * @param amb - 光量スライダーの値（スライダーの範囲は 0.45〜1。範囲外の値もそのまま倍率にするが、負の値は 0 にする。NaN や無限大は 1 にする）
  */
 export function envIntensityFor(amb: number): number {
   // 数でない値がシェーダーへ渡ると石とパールが壊れて写るので、スタジオそのままの強さにする
@@ -441,7 +441,7 @@ export function tintFromColor(hex: string): Vec3 {
  *
  * @param hex - 石の色（`#rrggbb`）
  * @param intensity - 環境マップの強さの倍率。`envIntensityFor` を通した、有限で 0 以上の値を渡す（NaN や無限大はそのまま成分に伝わる）
- * @returns 線形 RGB の新しい配列（呼ぶたびに作る）。各成分は 0〜`intensity` で、光量 1 を超えると 1 を超える（`THREE.Color` に数値 3 つで渡す前提）
+ * @returns 線形 RGB の新しい配列（呼ぶたびに作る）。各成分は 0〜`intensity`。スライダーの範囲（最大 1）では 1 を超えないが、1 より大きい強さを渡すと 1 を超える（`THREE.Color` に数値 3 つで渡す前提）
  */
 export function refractionColor(hex: string, intensity: number): Vec3 {
   // 石の色味
@@ -689,14 +689,24 @@ export function adjacentStone(stone: Birthstone, step: -1 | 1): Birthstone {
   return BIRTHSTONES[index];
 }
 
+/** 石を選んだときの文言。シーンの見出しの文言に、解説カードの上の月のラベルを足したもの。 */
+export interface JewelHeroContent extends HeroContent {
+  /** 解説カードの上に出す月のラベル（例: 4月）。シーンの見出し（SceneHero）には上付きラベルが無いので、カードだけが持つ。 */
+  eyebrow: string;
+}
+
 /**
  * 石を選んだときの文言を作る。解説カード（`JewelCard`）の月のラベル・名前・石言葉の文・操作のヒントと、
  * 読み上げ専用の知らせ（`PortfolioExperience` の `role="status"`）に使う。
+ *
+ * @param stone - 選んだ石
+ * @returns シーンの見出しの文言に、解説カードの月のラベル（`eyebrow`。例: 4月）を足したもの
+ * @throws {RangeError} 石の月が 1〜12 の整数でないとき（`monthJaLabel` が投げる）
  */
-export function jewelHero(stone: Birthstone): HeroContent {
+export function jewelHero(stone: Birthstone): JewelHeroContent {
   // 見出しの文言をまとめて返す
   return {
-    // 上付きラベル（例: 4月）。範囲外の月なら RangeError になる（"0月" などを出さない）
+    // 解説カードの月のラベル（例: 4月）。範囲外の月なら RangeError になる（"0月" などを出さない）
     eyebrow: monthJaLabel(stone.month),
     // 大きな英字タイトル（例: DIAMOND）
     title: stone.name.toUpperCase(),

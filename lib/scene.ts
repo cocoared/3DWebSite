@@ -26,7 +26,7 @@ export interface OceParams {
 
 /** 誕生石シーン（THE JEWELS）の操作パラメータ。 */
 export interface JewelParams {
-  /** 光量。0〜3。環境マップ（スタジオの光。studio.hdr）の強さの倍率で、1 でスタジオの光そのまま。露出は 2 倍に固定で、この値では変えない（lib/scenes/jewels.ts の envIntensityFor）。 */
+  /** 光量。0.45〜1。環境マップ（スタジオの光。studio.hdr）の強さの倍率で、1 でスタジオの光そのまま。露出は 2 倍に固定で、この値では変えない（lib/scenes/jewels.ts の envIntensityFor）。 */
   amb: number;
   /** 分散（虹色のきらめき＝ファイア）の強さ。0〜1。石ごとの分散の値に掛けて MeshRefractionMaterial に渡す。 */
   fire: number;
@@ -112,8 +112,6 @@ export function parseSceneTab(value: unknown): SceneTab | null {
 
 // HeroContent: 各シーンの左下に出す見出しブロックの文言。
 export interface HeroContent {
-  // 小さな上付きラベル(例: Scene 01 — Solar)
-  eyebrow: string;
   // 大きな英字タイトル(例: THE SUN)
   title: string;
   // 日本語の説明文
@@ -129,8 +127,6 @@ export interface HeroContent {
 export const HERO: Record<SceneTab, HeroContent> = {
   // 太陽シーンの見出し
   sun: {
-    // 上付きラベル
-    eyebrow: "Scene 01 — Solar",
     // タイトル
     title: "THE SUN",
     // 説明文
@@ -142,8 +138,6 @@ export const HERO: Record<SceneTab, HeroContent> = {
   },
   // 浜辺シーンの見出し
   oce: {
-    // 上付きラベル
-    eyebrow: "Scene 02 — Beach",
     // タイトル
     title: "THE SHORE",
     // 説明文
@@ -155,12 +149,10 @@ export const HERO: Record<SceneTab, HeroContent> = {
   },
   // 誕生石シーンの見出し（石を選ぶ前。選んだあとは lib/scenes/jewels.ts の jewelHero が作る）
   jewel: {
-    // 上付きラベル
-    eyebrow: "Scene 03 — Jewels",
     // タイトル
     title: "THE JEWELS",
     // 説明文
-    tag: "一月のガーネットから十二月のブルートパーズまで、十二の誕生石。月を選べば、その石のもとへ。",
+    tag: "1月のガーネットから12月のブルートパーズまで、12の誕生石。月を選べば、その石のもとへ。",
     // 操作のヒント
     hint: "Drag to rotate · Pick a month",
     // 読み上げの知らせ（タブを切り替えてきたとき。石の選択を外して戻ったときは lib/scenes/jewels.ts の overviewHero が別の文にする）
@@ -207,8 +199,8 @@ export const SLIDERS: Record<SceneTab, SliderDef[]> = {
   ],
   // 誕生石シーンのスライダー
   jewel: [
-    // 光量（環境マップの強さ）
-    { field: "amb", name: "光量", unit: "light", min: 0, max: 3, step: 0.05 },
+    // 光量（環境マップの強さ）。0.45〜1 倍（ユーザーの指定）。1 がスタジオの光そのままで、それより明るくはしない
+    { field: "amb", name: "光量", unit: "light", min: 0.45, max: 1, step: 0.05 },
     // 分散（虹色のきらめき）
     { field: "fire", name: "分散", unit: "fire", min: 0, max: 1, step: 0.02 },
   ],

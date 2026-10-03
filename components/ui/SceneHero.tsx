@@ -12,13 +12,13 @@ interface SceneHeroProps {
    */
   headingRef?: Ref<HTMLHeadingElement>;
   /**
-   * 後ろが明るい（誕生石シーンの真っ白な背景が出ている）なら `true`。文字を濃い色（ink）にし、暗い背景向けの黒い影を白い縁取りとにじみに替え、上付きラベルに白い地を敷く。
+   * 後ろが明るい（誕生石シーンの真っ白な背景が出ている）なら `true`。文字を濃い色（ink）にし、暗い背景向けの黒い影を白い縁取りとにじみに替える。
    * 省略すると `false`（太陽・浜辺の暗い 3D の上に、白い文字で出す）。
    */
   isOnLight?: boolean;
 }
 
-// SceneHero: 画面左下に出る見出しブロック(上付きラベル・タイトル・説明・操作ヒント)。
+// SceneHero: 画面左下に出る見出しブロック(タイトル・説明・操作ヒント)。
 export default function SceneHero({ content, headingRef, isOnLight = false }: SceneHeroProps) {
   // srOnlyWhenShort: 説明文とヒントを「見た目だけ」隠すクラス（sr-only。読み上げには残す）。
   // 高さが 480px（30rem）以下の画面（スマホの横持ちなど。app/globals.css の short:）で隠す。
@@ -33,10 +33,6 @@ export default function SceneHero({ content, headingRef, isOnLight = false }: Sc
         // 色の濃い石や暗い月のラベルに重なったとき、文字のまわりを白く抜いて読めるようにする。
         // text-shadow は子へ受け継がれるので、ここに付ければタイトル・説明文・ヒントにも効く
         text: "text-ink [text-shadow:0_0_1px_#ffffff,0_0_3px_#ffffff,0_0_12px_rgba(255,255,255,0.95)]",
-        // 上付きラベルの地: 白 85% の小さな札を敷く。11px の細い文字は縁取りだけでは足りず、320 × 568 の画面では JUL・JUN の暗いラベルの真上に来て読めなかったため
-        // （暗いラベルの上でも、地は白に近くなり、濃い文字が 4.5:1 を超える）。-mx-1.5 と px-1.5 で、文字の左端はタイトルとそろえたままにする。
-        // パソコン向けの配置でも薄くしない（opacity は地にも効き、縦長の窓で暗いラベルに重なったときに地が効ききらなくなるため）
-        eyebrow: "-mx-1.5 w-fit rounded-sm bg-white/85 px-1.5 py-0.5",
         // タイトルのフォーカスの枠: 内側に白い縁、外側に濃い色（ink）の二重の枠（月のラベルと同じ。小さな画面で暗い石やラベルに重なっても見える）。
         // 影は上の text から受け継ぐ
         title:
@@ -47,8 +43,6 @@ export default function SceneHero({ content, headingRef, isOnLight = false }: Sc
     : {
         // 文字の色は UI の層（PortfolioExperience）の text-paper を受け継ぐ
         text: "",
-        // 上付きラベルは、パソコン向けの配置（roomy:）では 70% に薄くする
-        eyebrow: "roomy:opacity-70",
         // タイトルの影と、白いフォーカスの枠
         title:
           "[text-shadow:0_4px_40px_rgba(0,0,0,0.45)] focus-visible:outline-paper focus-visible:outline-offset-4",
@@ -62,14 +56,6 @@ export default function SceneHero({ content, headingRef, isOnLight = false }: Sc
     // max-w-150: 幅は最大 600px（パソコンの広い画面で、タイトルと説明文が横に伸びすぎないように）。
     // shrink-0: スマホ向けの配置で下の段に縦に積んだとき、開いた操作パネルに押されて見出しが潰れないようにする
     <div className={`max-w-150 shrink-0 ${tone.text}`}>
-      {/* eyebrow: タイトル上の小さなラベル(例: Scene 01 — Solar)。英語として読み上げさせる。
-          スマホ向けの配置では明るい 3D の真上に来るので薄くせず（不透明）、パソコン向けの配置では暗い背景のときだけ 70% に薄くする（tone.eyebrow） */}
-      <div
-        lang="en"
-        className={`mb-2 roomy:mb-4 font-mono roomy:text-xs text-[11px] uppercase tracking-[0.26em] ${tone.eyebrow}`}
-      >
-        {content.eyebrow}
-      </div>
       {/* title: 大きな英字タイトル(例: THE SUN)。英語として読み上げさせる。スマホ向けの配置では 44px（高さ 480px 以下の画面では 28px）、パソコン向けの配置では 76px。
           tabIndex={-1}: Tab キーでは止まらないが、解説カードを閉じたあとにプログラムからフォーカスを預けられるようにする。
           フォーカスの枠は、キーボードで閉じたとき（:focus-visible）だけ出す（暗い背景では白い枠、明るい背景では白い縁と濃い色の二重の枠。tone.title）。ふだんは outline-0（outline-none だと focus-visible で太さを付けても枠が出ないため。JewelCard の見出しと同じ） */}
