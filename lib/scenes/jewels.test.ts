@@ -239,6 +239,24 @@ describe("OVERVIEW_POSE / focusPose / orbitAngles", () => {
     expect(dz / flat).toBeCloseTo(outZ);
   });
 
+  // 寄りすぎると石が画面の大半を占め、周りの石の並びも見えない（ユーザーの指摘）。引きすぎると主役の石が小さくなる。
+  // 割合は角度どうしの比（画面の長さの比は tan で決まり、少しだけ小さい）。40〜50% は倍率で約 5.8〜7.2 倍に当たり、
+  // 画面で見比べた 4.4 倍（約 66%。寄りすぎ）と 8 倍（約 36%。スマホで石が小さすぎた）を弾く
+  test("選んだ石を包む球が見える角度は、基準の縦の画角（BASE_FOV_DEG）の 40〜50%", () => {
+    // Arrange: 半径 5 の石（距離は半径の倍率で決まるので、半径の値によらず同じ割合になる）
+    const placement = { baseY: 3, centerY: 2, radius: 5 };
+    // Act: その石を見るカメラと石の距離
+    const { distance } = orbitAngles(focusPose(3, placement));
+    // 石を包む球が見える角度（度）。球の縁へ引いた接線どうしの角度
+    const stoneDeg = THREE.MathUtils.radToDeg(2 * Math.asin(placement.radius / distance));
+    // 縦の画角に対する割合
+    const share = stoneDeg / BASE_FOV_DEG;
+    // Assert: 寄りすぎない（以前の 4.4 倍では約 66% で、石を包む球が画角の 2/3 ほどを占めていた）
+    expect(share).toBeLessThanOrEqual(0.5);
+    // Assert: 引きすぎない（主役の石として大きく見せる）
+    expect(share).toBeGreaterThanOrEqual(0.4);
+  });
+
   // カメラと注視点が重なると向きが決まらない。0 で割らずに、水平に見ている（π/2）とみなす
   test("カメラと注視点が同じ位置のときは、極角を π/2・距離を 0 にする", () => {
     // Act: 同じ位置から同じ位置を見る

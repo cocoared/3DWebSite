@@ -41,8 +41,11 @@ export const HOVER_LIFT_MM = 1.2;
 /** 選んだ石が回る速さ（ラジアン/秒）。0.35 だと約 18 秒で 1 周する。 */
 export const SPIN_SPEED = 0.35;
 
-/** 石を選んだときのカメラと石の距離を、石を包む球の半径の何倍にするか。大きいほど引いて写る。 */
-export const FOCUS_DISTANCE_FACTOR = 4.4;
+/**
+ * 石を選んだときのカメラと石の距離を、石を包む球の半径の何倍にするか。大きいほど引いて写る。
+ * 石を包む球が見える角度は 2・asin(1 ÷ 倍率)。6.5 倍で約 17.7° になり、基準の縦の画角（`BASE_FOV_DEG`、40°）の約 44%。後ろに文字盤の石の並びも見える。
+ */
+export const FOCUS_DISTANCE_FACTOR = 6.5;
 
 /** MeshRefractionMaterial に渡す色のずれ（aberrationStrength）の最小値。0 を渡さないための下限。 */
 export const MIN_ABERRATION = 0.0001;
