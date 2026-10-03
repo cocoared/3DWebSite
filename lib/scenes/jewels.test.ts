@@ -12,6 +12,7 @@ import {
   advanceOpacity,
   advanceSpin,
   advanceViewShift,
+  applyRefractionResolution,
   applyStoneOpacity,
   applyViewShift,
   BASE_FOV_DEG,
@@ -31,7 +32,10 @@ import {
   isFadedStone,
   JEWELS_ENV_URL,
   JEWELS_GLB_URL,
+  JEWELS_MIN_FPS,
   jewelHero,
+  jewelsDpr,
+  jewelsFpsBounds,
   MAX_FOV_DEG,
   MIN_ABERRATION,
   nearestAngle,
@@ -1313,6 +1317,109 @@ describe("disposeRefractionBvh", () => {
       expect(() => disposeRefractionBvh(material)).not.toThrow();
     },
   );
+});
+
+// 誕生石のタブのキャンバスの解像度の倍率（デバイスピクセル比の範囲）。ふだんは 2 倍まで、重い端末では 1.25 倍まで
+describe("jewelsDpr / jewelsFpsBounds", () => {
+  // スマホ（ピクセル比 3）で 1.25 倍だと、屈折の切子面の境目の階段が約 2.4 倍に引き伸ばされてギザギザに見えたので、ふだんは 2 倍まで上げる
+  test("ふだんは 1〜2 倍", () => {
+    // Assert: 下限 1・上限 2
+    expect(jewelsDpr(false)).toEqual([1, 2]);
+  });
+
+  // フレームレートが落ちた端末では、以前の上限（1.25 倍）へ戻して軽くする
+  test("重い端末では 1〜1.25 倍", () => {
+    // Assert: 下限 1・上限 1.25
+    expect(jewelsDpr(true)).toEqual([1, 1.25]);
+  });
+
+  // どちらの範囲も、下限は等倍以上で、下限が上限を超えない
+  test.each([false, true])("範囲（軽くする = %s）は 1 ≤ 下限 ≤ 上限", (isReduced) => {
+    // Act: 範囲を求める
+    const [min, max] = jewelsDpr(isReduced);
+    // Assert: 下限は等倍以上
+    expect(min).toBeGreaterThanOrEqual(1);
+    // Assert: 下限は上限以下
+    expect(min).toBeLessThanOrEqual(max);
+  });
+
+  // 下げた方が、描くピクセル数が少ない（上限が小さい）
+  test("下げたときの上限は、ふだんの上限より小さい", () => {
+    // Assert: 上限どうしを比べる
+    expect(jewelsDpr(true)[1]).toBeLessThan(jewelsDpr(false)[1]);
+  });
+
+  // 返した配列を呼び出し側が書き換えても、次に返す値は変わらない（毎回新しい配列を返す）
+  test("返した配列を書き換えても、次の呼び出しに影響しない", () => {
+    // Arrange: 一度受け取って書き換える
+    const first = jewelsDpr(false);
+    // 上限を書き換える（呼び出し側の誤りのつもり）
+    first[1] = 99;
+    // Act: もう一度受け取る
+    const second = jewelsDpr(false);
+    // Assert: 上限は 2 のまま
+    expect(second[1]).toBe(2);
+  });
+
+  // フレームレートの判定の [下限, 上限]。下限は JEWELS_MIN_FPS、上限は無限大（上げる知らせ onIncline を出させない）
+  test("jewelsFpsBounds の下限は JEWELS_MIN_FPS、上限は無限大", () => {
+    // Act: 範囲を求める
+    const [lower, upper] = jewelsFpsBounds();
+    // Assert: 下限
+    expect(lower).toBe(JEWELS_MIN_FPS);
+    // Assert: 上限（どんなフレームレートも上限以上にはならない）
+    expect(upper).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  // 下げる目安のフレームレートは、60 fps の画面でカクつきが目に見えてくる値。60 以上にすると、ふつうに動く端末まで下げてしまう
+  test("JEWELS_MIN_FPS は 0 より大きく 60 未満", () => {
+    // Assert: 0 より大きい
+    expect(JEWELS_MIN_FPS).toBeGreaterThan(0);
+    // Assert: 60 未満
+    expect(JEWELS_MIN_FPS).toBeLessThan(60);
+  });
+});
+
+// drei の MeshRefractionMaterial の resolution（描く大きさ）を、実際の描画のピクセル数にする
+describe("applyRefractionResolution", () => {
+  // drei は CSS のピクセル数（size.width）を渡すが、シェーダーの gl_FragCoord は描画のピクセル数なので、解像度の倍率を掛けた値にする
+  test("屈折のマテリアルの resolution を、CSS の大きさ × 解像度の倍率にする", () => {
+    // Arrange: resolution の uniform を持つ偽物のマテリアル（drei の値は CSS のピクセル数）
+    const material = { uniforms: { resolution: { value: new THREE.Vector2(390, 844) } } };
+    // Act: 390 × 844 の画面を 2 倍で描く
+    applyRefractionResolution(material, 390, 844, 2);
+    // Assert: 横は 780
+    expect(material.uniforms.resolution.value.x).toBe(780);
+    // Assert: 縦は 1688
+    expect(material.uniforms.resolution.value.y).toBe(1688);
+  });
+
+  // パール（MeshPhysicalMaterial）には resolution の uniform が無いので、何もしない
+  test.each([
+    // ふつうのマテリアル（uniforms が無い）
+    ["uniforms が無い", new THREE.MeshPhysicalMaterial()],
+    // resolution が無いシェーダー
+    ["resolution が無い", { uniforms: {} }],
+    // マテリアルの配列
+    ["配列", [new THREE.MeshBasicMaterial()]],
+    // uniforms が null
+    ["uniforms が null", { uniforms: null }],
+    // 何も無い
+    ["undefined", undefined],
+  ])("%s なら何もせず、エラーも出さない", (_name, material) => {
+    // Act / Assert: エラーを出さない
+    expect(() => applyRefractionResolution(material, 390, 844, 2)).not.toThrow();
+  });
+
+  // resolution の値が Vector2 でなければ（別のシェーダーの同じ名前の uniform など）、書き換えない
+  test("resolution の値が Vector2 でなければ書き換えない", () => {
+    // Arrange: 値がふつうのオブジェクトの resolution
+    const material = { uniforms: { resolution: { value: { x: 1, y: 2 } } } };
+    // Act: 当てはめる
+    applyRefractionResolution(material, 390, 844, 2);
+    // Assert: 元のまま
+    expect(material.uniforms.resolution.value).toEqual({ x: 1, y: 2 });
+  });
 });
 
 // public/ に置いた 3D の資産が、コードの期待どおりにそろっているか（Blender のスクリプトで作り直したときの確認）

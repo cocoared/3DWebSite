@@ -1,5 +1,6 @@
 "use client";
 
+import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import SceneErrorBoundary from "@/components/SceneErrorBoundary";
@@ -22,13 +23,10 @@ import {
   type SceneTab,
   STORAGE_KEY,
 } from "@/lib/scene";
-import { jewelHero, overviewHero } from "@/lib/scenes/jewels";
+import { jewelHero, jewelsDpr, jewelsFpsBounds, overviewHero } from "@/lib/scenes/jewels";
 
 // CANVAS_DPR: キャンバスの解像度の倍率（デバイスピクセル比）の範囲 [下限, 上限]。高精細な画面でも 1.6 倍までにして、描くピクセル数を抑える
 const CANVAS_DPR: [number, number] = [1, 1.6];
-// JEWELS_DPR: 誕生石シーンだけの解像度の倍率の範囲。屈折の石は 1 ピクセルごとに光線を赤・緑・青の 3 回ずつ追いかけて重いので、
-// 上限を 1.25 倍に下げる（1.6 倍より描くピクセル数が約 4 割少ない）。大きくすると石の輪郭が細かくなるが、スマホで遅くなる
-const JEWELS_DPR: [number, number] = [1, 1.25];
 
 // readSavedTab: 前回開いていたシーンを localStorage から復元する(なければ太陽)。
 // このコンポーネントは page 側で ssr:false 指定のためクライアントでのみ実行され、localStorage を安全に読める。
@@ -66,6 +64,11 @@ export default function PortfolioExperience() {
   // isJewelsReady: 誕生石シーンの 3D が読み込まれて表示できているか（JewelsScene の onReady が知らせる）。
   // true の間だけ月のラベルを描く（読み込み中やエラーのときに、中身の無い「誕生月を選ぶ」ナビを読み上げさせないため）
   const [isJewelsReady, setIsJewelsReady] = useState(false);
+  // isJewelsDprReduced: 誕生石のタブでフレームレートが落ちたので、解像度の上限を下げたか（lib/scenes/jewels.ts の jewelsDpr）。
+  // 一度下げたら、ページを開いている間は下げたままにする（端末の速さは変わらないので）
+  const [isJewelsDprReduced, setIsJewelsDprReduced] = useState(false);
+  // reduceJewelsDpr: 解像度の上限を下げる（PerformanceMonitor が、フレームレートが下限を下回り続けたと知らせたとき）。最初に作った関数を使い回す
+  const reduceJewelsDpr = useCallback(() => setIsJewelsDprReduced(true), []);
   // selectTab: タブを切り替え、選択を localStorage に保存する。
   const selectTab = (next: SceneTab) => {
     // 表示シーンを更新
@@ -189,8 +192,8 @@ export default function PortfolioExperience() {
         {/* [&_canvas]:… は R3F が内部生成する <canvas> を層いっぱいに広げ、タッチのスクロール干渉を防ぐ指定。 */}
         <Canvas
           className="absolute inset-0 block h-full w-full cursor-grab touch-none active:cursor-grabbing [&_canvas]:block [&_canvas]:h-full! [&_canvas]:w-full! [&_canvas]:touch-none"
-          // 解像度の倍率（誕生石シーンだけ上限を下げる。タブを替えたときに切り替わる）
-          dpr={tab === "jewel" ? JEWELS_DPR : CANVAS_DPR}
+          // 解像度の倍率（誕生石シーンはふだん 2 倍まで、重い端末では 1.25 倍まで。タブを替えたときと、下げたときに切り替わる）
+          dpr={tab === "jewel" ? jewelsDpr(isJewelsDprReduced) : CANVAS_DPR}
           gl={{ antialias: true, alpha: true }}
           linear
           flat
@@ -199,6 +202,11 @@ export default function PortfolioExperience() {
           {tab === "sun" && <SunScene params={params.sun} />}
           {tab === "oce" && <OceanScene params={params.oce} />}
           {/* 誕生石シーンは .glb と .hdr を読み込むので、読み終わるまで Suspense で待つ（その間は何も描かない） */}
+          {/* 誕生石シーンの 3D が表示できてから、フレームレートを測る（読み込み中のシェーダーの準備で一時的に止まるのを、重い端末と見誤らないように）。
+              約 0.25 秒ごとに 10 回測り、10 回中 8 回以上が下限（lib/scenes/jewels.ts の jewelsFpsBounds）を下回ったら解像度を下げる。下げたら外して、測るのをやめる */}
+          {tab === "jewel" && isJewelsReady && !isJewelsDprReduced && (
+            <PerformanceMonitor bounds={jewelsFpsBounds} onDecline={reduceJewelsDpr} />
+          )}
           {tab === "jewel" && (
             <Suspense fallback={null}>
               {/* 誕生石シーン */}

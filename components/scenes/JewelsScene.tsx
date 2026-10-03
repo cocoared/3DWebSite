@@ -26,6 +26,7 @@ import {
   advanceOpacity,
   advanceSpin,
   advanceViewShift,
+  applyRefractionResolution,
   applyStoneOpacity,
   applyViewShift,
   CAMERA_SMOOTH_TIME,
@@ -518,7 +519,7 @@ function JewelStone({
   const isFaded = isFadedStone(stone.id, selected);
 
   // 毎フレーム、選ばれている石を回し、指を乗せた石を浮かせ、選ばれていない石を薄くする
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     // メッシュがまだ無ければ何もしない
     const target = mesh.current;
     // 早期リターン
@@ -542,6 +543,14 @@ function JewelStone({
     );
     // 不透明度をマテリアルに当てはめる（性能のため直接書き換える）
     applyStoneOpacity(target.material, motion.current.opacity);
+    // 屈折の計算に使う描く大きさを、実際の描画のピクセル数にする（drei は CSS のピクセル数を渡すので、解像度の倍率が 1 より大きいと環境マップがぼやける。
+    // drei は大きさが変わったときやマテリアルを作り直したときに CSS の値へ戻すので、毎フレーム上書きする。パールでは何もしない。性能のため直接書き換える）
+    applyRefractionResolution(
+      target.material,
+      state.size.width,
+      state.size.height,
+      state.viewport.dpr,
+    );
     // 載せるレイヤー: 影を落とす石はふだんのレイヤー、落とさない石（薄くする石と、戻りきっていない石）は影を撮るカメラに写らないレイヤー
     // （lib/scenes/jewels.ts の castsShadow。性能のため直接書き換える。layers.set はビットの並びを 1 つ書き換えるだけで、割り当ては無い）
     target.layers.set(

@@ -66,6 +66,45 @@ export const FADED_OPACITY = 0.15;
  */
 export const CAMERA_SMOOTH_TIME = 0.8;
 
+// JEWELS_DPR: 誕生石のタブのキャンバスの解像度の倍率の範囲 [下限, 上限]（ふだん）。屈折の石は 1 ピクセルごとに光線を追うので、
+// 切子面の境目は 1 ピクセル単位の階段になる（キャンバスのアンチエイリアスは輪郭にしか効かない）。上限を 1.25 倍にしていたころは、
+// スマホ（ピクセル比 3）で階段が約 2.4 倍に引き伸ばされてギザギザに見えたので、2 倍まで上げる（スマホで描くピクセル数は 1.25 倍のときの約 2.6 倍）。
+// 下限 1 は「ピクセル比が 1 未満の画面（ブラウザの縮小表示など）でも、等倍より粗くは描かない」
+const JEWELS_DPR = [1, 2] as const;
+// JEWELS_REDUCED_DPR: フレームレートが落ちた端末で使う範囲。以前の上限（1.25 倍。太陽・浜辺の 1.6 倍より描くピクセル数が約 4 割少ない）
+const JEWELS_REDUCED_DPR = [1, 1.25] as const;
+
+/**
+ * 誕生石のタブのキャンバスの解像度の倍率（デバイスピクセル比）の範囲 [下限, 上限] を返す。R3F の `<Canvas dpr>` に渡す。
+ * R3F は端末のピクセル比（`window.devicePixelRatio`）をこの範囲に収めて使う（ピクセル比 1 のパソコンは 1 のまま、3 のスマホは上限まで）。
+ * 呼ぶたびに新しい配列を返す（書き換えても次の呼び出しに影響しない。R3F は配列ではなく、収めたあとの数で変化を比べるので、毎回作っても描き直しは増えない）。
+ *
+ * @param isReduced - フレームレートが `JEWELS_MIN_FPS` を下回ったので軽くするなら `true`
+ */
+export function jewelsDpr(isReduced: boolean): [number, number] {
+  // 軽くするなら以前の上限、ふだんは 2 倍まで
+  const [min, max] = isReduced ? JEWELS_REDUCED_DPR : JEWELS_DPR;
+  // 新しい配列にして返す
+  return [min, max];
+}
+
+/**
+ * 誕生石のタブで、解像度を下げる目安のフレームレート（fps）。60 fps の画面で、カクつきが目に見えてくる値。
+ * drei の `PerformanceMonitor` は、測った値（0.25 秒以上たった最初のフレームまでの枚数から求めるので、実際より数 fps 高めに出る。実際の約 36 fps で 40）の
+ * 10 回中 8 回以上がこれを下回ったら知らせる。省電力モードなどでフレームレートが 30 fps に抑えられた端末では、いつも下がる。
+ */
+export const JEWELS_MIN_FPS = 40;
+
+/**
+ * drei の `PerformanceMonitor` の `bounds` に渡す、フレームレートの [下限, 上限]（fps）。
+ * drei の既定は、測った最高のフレームレートが 100 を超える画面（120 Hz など）で下限を 60 にするので、50〜59 fps で十分なめらかに動く端末まで下げてしまう。
+ * そのため、画面に関係なく下限を `JEWELS_MIN_FPS` にする。上限は無限大にして、上げる知らせ（`onIncline`）を出させない（一度下げたら戻さない）。
+ */
+export function jewelsFpsBounds(): [number, number] {
+  // 下限と、届かない上限
+  return [JEWELS_MIN_FPS, Number.POSITIVE_INFINITY];
+}
+
 /**
  * 誕生石シーンのレンダラーの露出（`toneMappingExposure`。2 倍 = +1 段）。Blender の jewels.blend の露出（+1 段）と同じ。
  * 光量スライダーでは変えない（スライダーは環境マップの強さ `envIntensityFor` を変える）。
@@ -481,6 +520,51 @@ export function applyStoneOpacity(material: unknown, opacity: number): void {
   if (typeof material !== "object" || material === null || Array.isArray(material)) return;
   // 不透明度（数値）を持つなら書き換える（in と typeof で型が絞り込まれるので、キャストは要らない。性能のため直接書き換える）
   if ("opacity" in material && typeof material.opacity === "number") material.opacity = opacity;
+}
+
+/**
+ * drei の MeshRefractionMaterial の `resolution`（描く大きさ）を、実際の描画のピクセル数（CSS の大きさ × 解像度の倍率）にする。
+ * `useFrame` から毎フレーム呼ぶ前提で、渡した `material` の uniform を**直接書き換える**（割り当ては無い）。
+ *
+ * drei は CSS のピクセル数（`size.width`）を渡すが、シェーダーは `gl_FragCoord`（描画のピクセル数）をこれで割って画面上の位置（0〜1）を求め、
+ * その変化の大きさで環境マップの細かさ（ミップマップの段）を選ぶ。倍率 2 だと位置が 0〜2 になり、1 段ぶん粗い（ぼやけた）環境マップを拾ってしまう。
+ * drei の props の型には `resolution` が無く、drei はキャンバスの大きさが変わったときやマテリアルを作り直したとき（分散の 0 をまたいだときなど）に CSS の値へ戻すので、描く直前の毎フレームに上書きする。
+ *
+ * - `uniforms.resolution.value` が `THREE.Vector2` のマテリアル（MeshRefractionMaterial）: 書き換える
+ * - 持たないもの（パールの MeshPhysicalMaterial など）や空の値、マテリアルの配列では何もしない
+ *
+ * @param material - メッシュのマテリアル（型が決まらないものとして受け取る）
+ * @param width - キャンバスの幅（CSS のピクセル数。R3F の `size.width`）
+ * @param height - キャンバスの高さ（CSS のピクセル数。R3F の `size.height`）
+ * @param dpr - 解像度の倍率（R3F の `viewport.dpr`。端末のピクセル比を `jewelsDpr` の範囲に収めた値）
+ */
+export function applyRefractionResolution(
+  material: unknown,
+  width: number,
+  height: number,
+  dpr: number,
+): void {
+  // オブジェクトでない、または配列（複数のマテリアル）なら何もしない
+  if (typeof material !== "object" || material === null || Array.isArray(material)) return;
+  // uniforms を持たなければ何もしない（three.js の標準のマテリアル）
+  if (
+    !("uniforms" in material) ||
+    typeof material.uniforms !== "object" ||
+    material.uniforms === null
+  )
+    return;
+  // resolution の uniform（無ければ undefined）
+  const resolution = "resolution" in material.uniforms ? material.uniforms.resolution : undefined;
+  // 値が Vector2 のときだけ書き換える（性能のため直接書き換える）
+  if (
+    typeof resolution === "object" &&
+    resolution !== null &&
+    "value" in resolution &&
+    resolution.value instanceof THREE.Vector2
+  ) {
+    // 描画のピクセル数にする
+    resolution.value.set(width * dpr, height * dpr);
+  }
 }
 
 /**
