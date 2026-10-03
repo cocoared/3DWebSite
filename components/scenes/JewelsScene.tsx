@@ -26,6 +26,7 @@ import {
   advanceOpacity,
   advanceSpin,
   advanceViewShift,
+  applyRefractionResolution,
   applyStoneOpacity,
   applyViewShift,
   CAMERA_SMOOTH_TIME,
@@ -51,6 +52,7 @@ import {
   stonePlacement,
   stoneYaw,
 } from "@/lib/scenes/jewels";
+import { createScreenAntialias } from "@/lib/screenAntialias";
 import { usePrefersReducedMotion } from "@/lib/usePrefersReducedMotion";
 
 // CLICK_TOLERANCE_PX: 押してから離すまでにこれ以上動いたら、クリックではなくドラッグ（カメラを回す操作）とみなす（px）
@@ -188,6 +190,8 @@ export default function JewelsScene({
   // 月のラベルを毎フレーム石のそばへ動かす（石を選んでいる間は隠す）。
   // useViewShift より後に呼ぶ（どちらも優先度 0 の useFrame で、登録順に動く。先に描く範囲のずらしを反映した行列で投影しないと、シートの開け閉めの間ラベルが 1 フレーム遅れる）
   useMonthLabels(labels, placements, selected === null);
+  // 描き終えた画面に SMAA をかけ、屈折の石の切子面の境目のギザギザを和らげる（このシーンを表示している間だけ、R3F の自動の描画の代わりに描く）
+  useScreenAntialias();
   // 表示できたことを呼び出し側に知らせ、消えるときに取り消す（月のラベルを描くかどうかに使う）
   useEffect(() => {
     // 表示できた
@@ -377,6 +381,19 @@ function useMonthLabels(
   });
 }
 
+// useScreenAntialias: 表示している間だけ、R3F の自動の描画の代わりに「画面へ描く → 写し取る → SMAA をかけて描き戻す」を行うフック（lib/screenAntialias.ts）。
+// useFrame に 1 以上の優先度を付けると、R3F は自動で描くのをやめ、ここで描く。優先度 1 なので、ほかの useFrame（カメラ -1、石・ラベル・影 0）がすべて動いたあとに描く。
+// このシーンが消えると useFrame の登録も外れ、R3F の自動の描画に戻る（太陽・浜辺はふだん通り）
+function useScreenAntialias(): void {
+  // antialias: SMAA の仕組み。useState の初期化関数で作り、描き直しても作り直さない（開発時の Strict Mode では初期化関数が 2 回呼ばれ、1 つは捨てられるが、
+  // GPU のメモリは最初の描画で確保されるので、捨てられた方は何も確保していない）
+  const [antialias] = useState(createScreenAntialias);
+  // 消えるときに GPU のメモリを片付ける（開発時の Strict Mode で片付けたあとに使われても、three.js が作り直す）
+  useEffect(() => () => antialias.dispose(), [antialias]);
+  // 毎フレーム、描いて SMAA をかける（優先度 1 = R3F の自動の描画の代わり）
+  useFrame((state) => antialias.render(state.gl, state.scene, state.camera), 1);
+}
+
 // useStudioLook: 表示している間だけ、レンダラーを写真向けの色の出し方にするフック。
 // Canvas は太陽・浜辺のために linear（sRGB に変換しない）+ flat（トーンマッピングしない）で作っているが、
 // 宝石は写真のような色で見せたいので、トーンマッピング（Neutral）・決まった露出（STUDIO_EXPOSURE）・sRGB 出力に切り替え、離れるときに戻す。
@@ -518,7 +535,7 @@ function JewelStone({
   const isFaded = isFadedStone(stone.id, selected);
 
   // 毎フレーム、選ばれている石を回し、指を乗せた石を浮かせ、選ばれていない石を薄くする
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     // メッシュがまだ無ければ何もしない
     const target = mesh.current;
     // 早期リターン
@@ -542,6 +559,14 @@ function JewelStone({
     );
     // 不透明度をマテリアルに当てはめる（性能のため直接書き換える）
     applyStoneOpacity(target.material, motion.current.opacity);
+    // 屈折の計算に使う描く大きさを、実際の描画のピクセル数にする（drei は CSS のピクセル数を渡すので、解像度の倍率が 1 より大きいと環境マップがぼやける。
+    // drei は大きさが変わったときやマテリアルを作り直したときに CSS の値へ戻すので、毎フレーム上書きする。パールでは何もしない。性能のため直接書き換える）
+    applyRefractionResolution(
+      target.material,
+      state.size.width,
+      state.size.height,
+      state.viewport.dpr,
+    );
     // 載せるレイヤー: 影を落とす石はふだんのレイヤー、落とさない石（薄くする石と、戻りきっていない石）は影を撮るカメラに写らないレイヤー
     // （lib/scenes/jewels.ts の castsShadow。性能のため直接書き換える。layers.set はビットの並びを 1 つ書き換えるだけで、割り当ては無い）
     target.layers.set(
